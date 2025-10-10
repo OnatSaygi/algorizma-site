@@ -3,29 +3,57 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Algorizma | Generatif Sanat Duo</title>
-  <meta name="description" content="Algorizma – algoritmik & generatif sanat duosu. Elektronik, görsel ve işitsel deneyimler.">
+  <title>Algorizma | Generative Art</title>
+  <meta name="description" content="Algorizma – algoritmik & generatif sanat duosu.">
   <script src="https://cdn.tailwindcss.com"></script>
+  <!--<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>-->
+  <script src="p5.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Unicase:wght@300;400;500;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
+    h1 {
+      font-family: "Cormorant Unicase", serif;
+      letter-spacing: 0.05em;
+    }
+
+    body {
+      font-family: "Courier Prime", monospace;
+      overflow: hidden;
+    }
+  </style>
 </head>
-<body class="bg-black text-white flex items-center justify-center min-h-screen">
-  <main class="text-center px-4">
+<body class="bg-black text-white flex items-center justify-center min-h-screen relative">
+  <main class="text-center px-4 z-20 relative">
+
     <h1 class="text-4xl md:text-6xl font-bold tracking-tight mb-6">
-      Algorizma
+      ALGORİZMA
     </h1>
     <p class="text-lg md:text-xl text-gray-300 mb-8">
-      Generatif & algoritmik sanat duosu<br>
-      Görsel, işitsel ve elektronik deneyimler.
+      Generatif & algoritmik sanat duosu
     </p>
     <div class="flex gap-4 justify-center">
-      <a href="mailto:algorizma@domain.com" 
-         class="px-5 py-2 rounded-full bg-white text-black font-medium hover:bg-gray-200 transition">
-        İletişim
+      <a href="https://instagram.com/algorizma" target="_blank"
+         class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition">
+             Biz
       </a>
       <a href="https://instagram.com/algorizma" target="_blank"
          class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition">
-        Instagram
+             Eğlence Butonu
+      </a>
+      <a href="https://instagram.com/algorizma" target="_blank"
+         class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition">
+             Ig/📷
       </a>
     </div>
   </main>
+
+  <script src="p5.webserial.js"></script>
+  <script src="sliders.js"></script>
+  <script src="util.js"></script>
+  <script src="spatialgrid.js"></script>
+  <script src="poisson.js"></script>
+  <script src="agent.js"></script>
+  <script src="sketch.js"></script>
 </body>
 </html>
