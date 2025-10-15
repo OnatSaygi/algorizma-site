@@ -1,25 +1,22 @@
-.courier-prime-regular {
-  font-family: "Courier Prime", monospace;
+.fira-code-regular {
+  font-family: "Fira Code", monospace;
+  font-optical-sizing: auto;
   font-weight: 400;
   font-style: normal;
 }
 
-.courier-prime-bold {
-  font-family: "Courier Prime", monospace;
-  font-weight: 700;
+.fira-code-thin {
+  font-family: "Fira Code", monospace;
+  font-optical-sizing: auto;
+  font-weight: 300;
   font-style: normal;
 }
 
-.courier-prime-regular-italic {
-  font-family: "Courier Prime", monospace;
-  font-weight: 400;
-  font-style: italic;
-}
-
-.courier-prime-bold-italic {
-  font-family: "Courier Prime", monospace;
+.fira-code-bold {
+  font-family: "Fira Code", monospace;
+  font-optical-sizing: auto;
   font-weight: 700;
-  font-style: italic;
+  font-style: normal;
 }
 
 /* opsiyonel: canvas'ın tüm sayfada sabit kalmasını sağlar */

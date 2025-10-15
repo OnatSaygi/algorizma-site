@@ -49,13 +49,14 @@ function initAgents() {
 let canvas;
 
 function setup() {
-  createCanvas(windowWidth, windowHeight);
-  canvas = canvas || this._renderer.canvas;
-	canvas.style.zIndex = '-1';
+  canvas = createCanvas(windowWidth, windowHeight);
+  canvas.addClass('p5-background');
+	canvas.style.zIndex = '-20';
 	canvas.style.position = 'fixed';
 	canvas.style.top = '0';
 	canvas.style.left = '0';
-  createSliders();
+
+	createSliders();
   dimAgentColor =     color(150, 200,   0, 130);
   brightAgentColor =  color(150, 200, 200,  80);
   brightAgentColor2 = color(150, 200, 200,  20);
@@ -76,6 +77,11 @@ function setup() {
   }
 
   initAgents();
+}
+
+function windowResized() {
+  canvas.style.width = '100vw';
+  canvas.style.height = '100vh';
 }
 
 function draw() {

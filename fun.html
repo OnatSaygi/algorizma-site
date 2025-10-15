@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Algorizma | Eğlence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: "Fira Code", monospace;
+      margin: 0;
+      background: #000;
+      color: white;
+    }
+
+    .sketch-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 4rem 1rem;
+      border-bottom: 1px solid #333;
+    }
+
+    .sketch-section h2 {
+      margin-bottom: 1rem;
+    }
+
+    iframe {
+      width: 500px;
+      height: 500px;
+      border: none;
+      background: #111;
+    }
+
+    @media(max-width: 640px) {
+      iframe {
+        width: 90%;
+        height: 300px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Anasayfaya Dön Butonu -->
+  <div class="text-center mt-4">
+    <a href="index.html"
+       class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition">
+      Anasayfaya Dön
+    </a>
+  </div>
+
+  <h1 class="text-center text-4xl mt-8 mb-8">Algorizma Eğlence</h1>
+
+  <!-- Sketch 1 -->
+  <div class="sketch-section">
+    <h2>Lotus</h2>
+    <iframe src="sketch1.html"></iframe>
+  </div>
+
+  <!-- Sketch 2 -->
+  <div class="sketch-section">
+    <h2>Organism</h2>
+    <iframe src="sketch2.html"></iframe>
+  </div>
+
+  <!-- Sketch 3 -->
+  <div class="sketch-section">
+    <h2>Quasar-Bit</h2>
+    <iframe src="sketch3.html"></iframe>
+  </div>
+
+  <div class="sketch-section">
+    <h2>pow(breakcore, 2)</h2>
+    <iframe src="sketch4.html"></iframe>
+  </div>
+
+</body>
+</html>
