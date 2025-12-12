@@ -96,13 +96,13 @@ function setup() {
 }
 
 function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
+  canvas.style.width = "100vw";
+  canvas.style.height = "100vh";
 }
 
 function draw() {
   getSliders();
   background(0, 0, 0, fade);
-  translate(width / 2, height / 2);
   if (slidersVisible) displayAverageFrameRate(10, 30, 60);
 
   // Read serial data and write to sliders
