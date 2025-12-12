@@ -64,7 +64,8 @@ function initAgents() {
 let canvas;
 
 function setup() {
-  canvas = createCanvas(windowWidth, windowHeight);
+  canvas = createCanvas(windowWidth, windowHeight, WEBGL);
+  pixelDensity(1);
   canvas.addClass("p5-background");
   canvas.style.zIndex = "-20";
   canvas.style.position = "fixed";
