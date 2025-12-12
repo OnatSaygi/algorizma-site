@@ -1,123 +1,151 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="tr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Algorizma | Generative Art</title>
-  <meta name="description" content="Algorizma – algoritmik & generatif sanat duosu.">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="p5.js"></script>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Algorizma | Generative Art</title>
+        <meta
+            name="description"
+            content="Algorizma – algoritmik & generatif sanat duosu."
+        />
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="p5.js"></script>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap" rel="stylesheet">
-  <link rel="icon" type="image/png" href="favicon.png">
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="icon" type="image/png" href="favicon.png" />
 
-  <style>
-    body {
-      font-family: "Fira Code", monospace;
-      margin: 0;
-    }
+        <style>
+            html,
+            body {
+                user-select: none;
+                touch-action: none;
+                -webkit-user-select: none;
+            }
+            body {
+                font-family: "Fira Code", monospace;
+                margin: 0;
+            }
 
-    canvas.p5-background {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: -10;
-      pointer-events: none;
-    }
+            canvas.p5-background {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: -10;
+                pointer-events: none;
+            }
 
-    /* Section ayarları */
-    section {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      transition: opacity 0.3s ease;
-      opacity: 0;
-      pointer-events: none;
-    }
+            /* Section ayarları */
+            section {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                transition: opacity 0.3s ease;
+                opacity: 0;
+                pointer-events: none;
+            }
 
-    section.active {
-      opacity: 1;
-      pointer-events: auto;
-    }
+            section.active {
+                opacity: 1;
+                pointer-events: auto;
+            }
 
-    h1, h2, p {
-      margin: 0.5rem 0;
-    }
-  </style>
-</head>
+            h1,
+            h2,
+            p {
+                margin: 0.5rem 0;
+            }
+        </style>
+    </head>
 
-<body class="bg-black text-white min-h-screen relative">
+    <body class="bg-black text-white min-h-screen relative">
+        <!-- P5.js sketchler -->
+        <script src="p5.webserial.js"></script>
+        <script src="sliders.js"></script>
+        <script src="util.js"></script>
+        <script src="spatialgrid.js"></script>
+        <script src="agent.js"></script>
+        <script src="sketch.js"></script>
 
-  <!-- P5.js sketchler -->
-  <script src="p5.webserial.js"></script>
-  <script src="sliders.js"></script>
-  <script src="util.js"></script>
-  <script src="spatialgrid.js"></script>
-  <script src="agent.js"></script>
-  <script src="sketch.js"></script>
+        <!-- Home Section -->
+        <section id="home" class="active text-center px-4">
+            <h1 class="text-4xl md:text-6xl mb-6">ALGORİZMA</h1>
+            <p class="text-lg md:text-xl text-gray-300 mb-8">
+                Generatif & algoritmik sanat duosu
+            </p>
+            <div class="flex gap-4 justify-center">
+                <button
+                    id="aboutBtn"
+                    class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition"
+                >
+                    Biz
+                </button>
+                <a
+                    href="fun.html"
+                    class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition"
+                >
+                    Eğlence Butonu
+                </a>
+                <a
+                    href="https://instagram.com/algorizma"
+                    target="_blank"
+                    class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition"
+                >
+                    Ig/📷
+                </a>
+                <a
+                    href="Algorizma_Portfolio.pdf"
+                    target="_blank"
+                    class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition"
+                >
+                    Portfolyo
+                </a>
+            </div>
+        </section>
 
-  <!-- Home Section -->
-  <section id="home" class="active text-center px-4">
-    <h1 class="text-4xl md:text-6xl mb-6">ALGORİZMA</h1>
-    <p class="text-lg md:text-xl text-gray-300 mb-8">
-      Generatif & algoritmik sanat duosu
-    </p>
-    <div class="flex gap-4 justify-center">
-      <button id="aboutBtn" class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition">
-        Biz
-      </button>
-      <a href="fun.html" class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition">
-        Eğlence Butonu
-      </a>
-      <a href="https://instagram.com/algorizma" target="_blank"
-         class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition">
-        Ig/📷
-      </a>
-      <a href="Algorizma_Portfolio.pdf" target="_blank"
-         class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition">
-        Portfolyo
-      </a>
-    </div>
-  </section>
+        <!-- About Section -->
+        <section id="about" class="bg-transparent text-center px-4">
+            <h2 class="text-3xl mb-4">Biz Kimiz?</h2>
+            <p class="text-lg text-gray-300 max-w-xl mx-auto">
+                Algorizma, algoritmik ve generatif sanatla ilgilenen bir duo.
+                Elektronik, görsel ve işitsel deneyimler yaratıyoruz.
+            </p>
+            <button
+                id="backBtn"
+                class="mt-6 px-5 py-2 rounded-full border border-gray-500 hover:border-white transition"
+            >
+                Geri
+            </button>
+        </section>
 
-  <!-- About Section -->
-  <section id="about" class="bg-transparent text-center px-4">
-    <h2 class="text-3xl mb-4">Biz Kimiz?</h2>
-    <p class="text-lg text-gray-300 max-w-xl mx-auto">
-      Algorizma, algoritmik ve generatif sanatla ilgilenen bir duo. Elektronik, görsel ve işitsel deneyimler yaratıyoruz.
-    </p>
-    <button id="backBtn" class="mt-6 px-5 py-2 rounded-full border border-gray-500 hover:border-white transition">
-      Geri
-    </button>
-  </section>
+        <!-- JS: Section geçişleri -->
+        <script>
+            const home = document.getElementById("home");
+            const about = document.getElementById("about");
+            const aboutBtn = document.getElementById("aboutBtn");
+            const backBtn = document.getElementById("backBtn");
 
-  <!-- JS: Section geçişleri -->
-  <script>
-    const home = document.getElementById('home');
-    const about = document.getElementById('about');
-    const aboutBtn = document.getElementById('aboutBtn');
-    const backBtn = document.getElementById('backBtn');
+            aboutBtn.addEventListener("click", () => {
+                home.classList.remove("active");
+                about.classList.add("active");
+            });
 
-    aboutBtn.addEventListener('click', () => {
-      home.classList.remove('active');
-      about.classList.add('active');
-    });
-
-    backBtn.addEventListener('click', () => {
-      about.classList.remove('active');
-      home.classList.add('active');
-    });
-  </script>
-
-</body>
+            backBtn.addEventListener("click", () => {
+                about.classList.remove("active");
+                home.classList.add("active");
+            });
+        </script>
+    </body>
 </html>
