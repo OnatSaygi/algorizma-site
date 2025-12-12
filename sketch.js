@@ -36,16 +36,19 @@ let connectionColor;
 let port;
 let latestData = "";
 
+document.addEventListener("touchstart", {});
+
 function touchStarted() {
-  mouseClicked();
   return false;
 }
 
 function touchMoved() {
-  mouseClicked();
   return false;
 }
 
+function touchEnded() {
+  return false;
+}
 // Initialize agents
 function initAgents() {
   background(0, 40);
