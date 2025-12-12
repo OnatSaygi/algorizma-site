@@ -1,31 +1,38 @@
 .fira-code-regular {
-  font-family: "Fira Code", monospace;
-  font-optical-sizing: auto;
-  font-weight: 400;
-  font-style: normal;
+    font-family: "Fira Code", monospace;
+    font-optical-sizing: auto;
+    font-weight: 400;
+    font-style: normal;
 }
 
 .fira-code-thin {
-  font-family: "Fira Code", monospace;
-  font-optical-sizing: auto;
-  font-weight: 300;
-  font-style: normal;
+    font-family: "Fira Code", monospace;
+    font-optical-sizing: auto;
+    font-weight: 300;
+    font-style: normal;
 }
 
 .fira-code-bold {
-  font-family: "Fira Code", monospace;
-  font-optical-sizing: auto;
-  font-weight: 700;
-  font-style: normal;
+    font-family: "Fira Code", monospace;
+    font-optical-sizing: auto;
+    font-weight: 700;
+    font-style: normal;
 }
 
 /* opsiyonel: canvas'ın tüm sayfada sabit kalmasını sağlar */
 canvas.p5-background {
-  position: fixed !important;
-  top: 0;
-  left: 0;
-  width: 100% !important;
-  height: 100% !important;
-  z-index: 0 !important;            /* metinlerin arkasında kalacak */
-  pointer-events: none !important;  /* canvas tıklamaları engellemez, linkler çalışır */
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 0 !important; /* metinlerin arkasında kalacak */
+    pointer-events: none !important; /* canvas tıklamaları engellemez, linkler çalışır */
+}
+
+#sketch-container,
+body,
+html {
+    overflow: visible !important;
+    height: 100vh;
 }
