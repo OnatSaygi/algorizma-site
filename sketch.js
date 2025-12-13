@@ -36,16 +36,6 @@ let connectionColor;
 let port;
 let latestData = "";
 
-document.addEventListener("touchstart", {});
-
-function touchStarted() {
-  return false;
-}
-
-function touchMoved() {
-  return false;
-}
-
 function touchEnded() {
   return false;
 }
@@ -64,8 +54,7 @@ function initAgents() {
 let canvas;
 
 function setup() {
-  canvas = createCanvas(windowWidth, windowHeight, WEBGL);
-  pixelDensity(1);
+  canvas = createCanvas(windowWidth, windowHeight);
   canvas.addClass("p5-background");
   canvas.style.zIndex = "-20";
   canvas.style.position = "fixed";
