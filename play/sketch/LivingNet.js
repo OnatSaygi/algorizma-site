@@ -215,6 +215,7 @@ class LivingNet {
       // #region p5 lifecycle
     p.setup = () => {
       p.createCanvas(p.windowWidth, p.windowHeight);
+      p.canvas.classList.add('p5-background');
       Object.assign(p.canvas.style, {
         position: 'fixed', top: '0', left: '0', zIndex: '0'
       });

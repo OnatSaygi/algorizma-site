@@ -277,6 +277,7 @@ class ThymeFlows {
       Object.assign(p.canvas.style, {
         position: 'fixed', top: '0', left: '0', zIndex: '0'
       });
+      p.canvas.classList.add('p5-background');
       p.noFill();
       p.colorMode(p.RGB, 1);
       p.strokeCap(p.SQUARE);
