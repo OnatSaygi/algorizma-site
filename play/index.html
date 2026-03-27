@@ -5,11 +5,108 @@
     <style>
       html, body { height: 100%; overflow: hidden; }
       body { margin: 0; background: #1a1a1a; }
+
+      /* Mobile portrait: larger touch targets and readable text */
+      @media (max-width: 600px) and (orientation: portrait) {
+        #ui-panel {
+          right: 8px !important;
+          top: 8px !important;
+          left: 8px !important;
+          min-width: unset !important;
+          width: calc(100% - 16px) !important;
+          padding: 16px !important;
+          font-size: 15px !important;
+          box-sizing: border-box;
+        }
+        #ui-panel select,
+        #ui-panel button,
+        #ui-panel input[type="checkbox"] {
+          font-size: 15px;
+          min-height: 40px;
+        }
+        #ui-panel button {
+          padding: 8px 14px;
+          min-width: 80px;
+        }
+        #ui-panel select {
+          padding: 6px 8px;
+        }
+        #ui-panel #conn-status,
+        #ui-panel #conn-list,
+        #ui-panel #conn-active {
+          font-size: 13px !important;
+        }
+        #ui-panel label {
+          font-size: 13px !important;
+          gap: 10px !important;
+        }
+        #ui-panel input[type="checkbox"] {
+          width: 18px;
+          height: 18px;
+          min-height: unset;
+          accent-color: #fff;
+        }
+      }
     </style>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
   </head>
   <body>
     <main></main>
+
+    <div id="ui-panel" style="position:fixed;right:16px;top:16px;padding:12px;background:rgba(0,0,0,0.75);color:#fff;border-radius:8px;font-family:sans-serif;z-index:9999;transition:opacity 0.2s ease;opacity:0;pointer-events:none;min-width:220px">
+        <div style="margin-bottom:8px;font-weight:600">Connection</div>
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
+            <select id="conn-select" style="flex:1">
+                <option value="bluetooth">Bluetooth</option>
+                <option value="serial">Serial</option>
+                <option value="autonomous">Autonomous</option>
+            </select>
+            <button id="conn-connect">Connect</button>
+            <button id="conn-disconnect">Disconnect</button>
+        </div>
+        <div id="conn-status" style="font-size:11px;margin-bottom:4px;opacity:0.9">idle</div>
+        <div id="conn-list" style="font-size:11px;margin-bottom:4px;opacity:0.9">
+            <div>Bluetooth: <span id="status-bluetooth">disconnected</span></div>
+            <div>Serial: <span id="status-serial">disconnected</span></div>
+            <div>Autonomous: <span id="status-autonomous">stopped</span></div>
+        </div>
+        <div id="conn-active" style="font-size:11px;margin-bottom:4px;opacity:0.9">Playing: <span id="active-source">-</span></div>
+        <hr style="border-color:rgba(255,255,255,0.2);margin:6px 0">
+        <div style="font-weight:600;margin-bottom:6px">Sketch</div>
+        <div style="display:flex;gap:4px;align-items:center">
+            <select id="embed-select" style="flex:1">
+                <option value="LivingNet">LivingNet</option>
+                <option value="ThymeFlows">ThymeFlows</option>
+            </select>
+        </div>
+        <hr style="border-color:rgba(255,255,255,0.2);margin:6px 0">
+        <label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:6px">
+            <input type="checkbox" id="hide-until-click">
+            Hide UI until click / double-tap
+        </label>
+        <hr style="border-color:rgba(255,255,255,0.2);margin:6px 0">
+        <button id="fullscreen-btn" style="width:100%;padding:6px 0;cursor:pointer">⛶ Tam Ekran</button>
+    </div>
+
+    <script>
+        document.getElementById('fullscreen-btn').addEventListener('click', function () {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+                this.textContent = '✕ Tam Ekrandan Çık';
+            } else {
+                document.exitFullscreen();
+                this.textContent = '⛶ Tam Ekran';
+            }
+        });
+        document.addEventListener('fullscreenchange', function () {
+            const btn = document.getElementById('fullscreen-btn');
+            if (!document.fullscreenElement) {
+                btn.textContent = '⛶ Tam Ekran';
+            }
+        });
+    </script>
+
     <script src="sketch/ThymeFlows.js"></script>
     <script src="sketch/LivingNet.js"></script>
 

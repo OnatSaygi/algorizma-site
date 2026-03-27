@@ -6,59 +6,7 @@ let lastInputTime = 0;
 const VISIBLE_MS = 3000;
 
 function initUI() {
-    // create UI container
-    uiDiv = document.createElement('div');
-    Object.assign(uiDiv.style, {
-        position: 'fixed',
-        right: '16px',
-        top: '16px',
-        padding: '12px',
-        background: 'rgba(0,0,0,0.75)',
-        color: '#fff',
-        borderRadius: '8px',
-        fontFamily: 'sans-serif',
-        zIndex: 9999,
-        transition: 'opacity 0.2s ease',
-        opacity: '0',
-        pointerEvents: 'none',
-        minWidth: '220px'
-    });
-
-    uiDiv.innerHTML = `
-        <div style="margin-bottom:8px;font-weight:600">Connection</div>
-        <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
-            <select id="conn-select" style="flex:1">
-                <option value="bluetooth">Bluetooth</option>
-                <option value="serial">Serial</option>
-                <option value="autonomous">Autonomous</option>
-            </select>
-            <button id="conn-connect">Connect</button>
-            <button id="conn-disconnect">Disconnect</button>
-        </div>
-        <div id="conn-status" style="font-size:11px;margin-bottom:4px;opacity:0.9">idle</div>
-        <div id="conn-list" style="font-size:11px;margin-bottom:4px;opacity:0.9">
-            <div>Bluetooth: <span id="status-bluetooth">disconnected</span></div>
-            <div>Serial: <span id="status-serial">disconnected</span></div>
-            <div>Autonomous: <span id="status-autonomous">stopped</span></div>
-        </div>
-
-        <div id="conn-active" style="font-size:11px;margin-bottom:4px;opacity:0.9">Playing: <span id="active-source">-</span></div>
-        <hr style="border-color:rgba(255,255,255,0.2);margin:6px 0">
-        <div style="font-weight:600;margin-bottom:6px">Sketch</div>
-        <div style="display:flex;gap:4px;align-items:center">
-            <select id="embed-select" style="flex:1">
-                <option value="LivingNet">LivingNet</option>
-                <option value="ThymeFlows">ThymeFlows</option>
-            </select>
-        </div>
-        <hr style="border-color:rgba(255,255,255,0.2);margin:6px 0">
-        <label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:6px">
-            <input type="checkbox" id="hide-until-click">
-            Hide UI until click / double-tap
-        </label>
-
-    `;
-    document.body.appendChild(uiDiv);
+    uiDiv = document.getElementById('ui-panel');
 
     const connSelect       = uiDiv.querySelector('#conn-select');
     const connConnectBtn    = uiDiv.querySelector('#conn-connect');
