@@ -3,10 +3,10 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Algorizma | Generative Art</title>
+        <title>Algorizma</title>
         <meta
             name="description"
-            content="Algorizma – algoritmik & generatif sanat duosu."
+            content="Algorizma - algoritmik & generatif sanat duosu."
         />
         <script src="https://cdn.tailwindcss.com"></script>
         <script src="p5.js"></script>
@@ -61,6 +61,22 @@
             p {
                 margin: 0.5rem 0;
             }
+
+            /* Mobil uyumluluk için düzenlemeler */
+            @media (max-width: 640px) {
+                .flex {
+                    flex-wrap: wrap;
+                }
+
+                .flex > * {
+                    flex: 1 1 auto;
+                    margin-bottom: 0.5rem;
+                }
+
+                p.text-lg {
+                    font-size: 1rem;
+                }
+            }
         </style>
     </head>
 
@@ -90,14 +106,14 @@
                     href="play"
                     class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition"
                 >
-                    Eğlence Butonu
+                    Play
                 </a>
                 <a
                     href="https://instagram.com/algorizma"
                     target="_blank"
                     class="px-5 py-2 rounded-full border border-gray-500 hover:border-white transition"
                 >
-                    Ig/📷
+                    Ig
                 </a>
                 <a
                     href="Algorizma_Portfolio.pdf"

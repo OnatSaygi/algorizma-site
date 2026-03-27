@@ -37,7 +37,8 @@ let port;
 let latestData = "";
 
 function touchEnded() {
-  return false;
+  // Mobilde sayfa üzerindeki buton/link tıklamalarını engellememek için
+  // touch olaylarını global olarak iptal etmiyoruz.
 }
 // Initialize agents
 function initAgents() {
