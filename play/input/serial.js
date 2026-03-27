@@ -18,7 +18,7 @@ async function connectSerial() {
   }
   try {
     _serialPort = await navigator.serial.requestPort();
-    await _serialPort.open({ baudRate: 9600 });
+    await _serialPort.open({ baudRate: 115200 });
     _isOpen = true;
     readLoop();
     return true;
