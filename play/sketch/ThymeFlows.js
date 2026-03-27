@@ -283,9 +283,17 @@ class ThymeFlows {
       p.strokeCap(p.SQUARE);
       stackData = new Float64Array(MAX_STACK_SIZE * STACK_STRIDE);
       powCache  = new Float32Array(cfg.b);
+
+      // Adjust samples based on aspect ratio
+      cfg.samples = (p.width / p.height >= 1.5) ? 3 : 1;
     };
 
-    p.windowResized = () => p.resizeCanvas(p.windowWidth, p.windowHeight);
+    p.windowResized = () => {
+      p.resizeCanvas(p.windowWidth, p.windowHeight);
+
+      // Adjust samples based on aspect ratio
+      cfg.samples = (p.width / p.height >= 1.5) ? 3 : 1;
+    };
 
     p.keyPressed = () => {
       if (p.key === 'a') refresh += 12345;
