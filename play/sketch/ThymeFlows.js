@@ -10,7 +10,7 @@ class ThymeFlows {
 
     this.cfg = Object.assign({
       speed:            0.6,
-      fpsCounter:       true,
+      fpsCounter:       false,
       f:                6,
       b:                6,
       samples:          3,

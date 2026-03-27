@@ -234,7 +234,7 @@ class LivingNet {
 
       const fade = (1 - Math.pow(cfg.ghostFade / 255, 0.15)) * 255;
       p.background(0, 0, 0, fade);
-      displayFPS(10, 30);
+      // displayFPS(10, 30);
 
       // Keep agent radii in sync
       for (const a of agents) a.r = cfg.cellRadius;
