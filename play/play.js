@@ -156,6 +156,12 @@ function initUI() {
 
     // input listeners
     const hideUntilClickCheckbox = uiDiv.querySelector('#hide-until-click');
+    hideUntilClickCheckbox.addEventListener('change', () => {
+        if (hideUntilClickCheckbox.checked) {
+            lastInputTime = 0;
+            hideUI();
+        }
+    });
 
     // double-tap detection for mobile
     let lastTapTime = 0;
