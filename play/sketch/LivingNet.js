@@ -41,14 +41,14 @@ class LivingNet {
 
     // Valid ranges for each pot-driven parameter (used in _applyPot)
     this._ranges = {
-      numAgents:         [70,   400],
-      forceStrength:     [0.001,    0.010],
-      interactionRadius: [150,   500],
-      maxConnections:    [3,    5],
-      moveSpeed:         [1,    5],
-      respawnSpeed:      [0.02,    1.0],
-      cellRadius:        [3,    40],
-      ghostFade:         [20,    255],
+      numAgents:         [20, 400],
+      forceStrength:     [0, 0.01],
+      interactionRadius: [70, 500],
+      maxConnections:    [0,    5],
+      moveSpeed:         [0,    5],
+      respawnSpeed:      [0,    1],
+      cellRadius:        [3,   20],
+      ghostFade:         [0,  255],
     };
 
     this.agents = [];
