@@ -83,8 +83,15 @@ class Mandala {
         );
 
         for (let i = 0; i < leaf; i++) {
-          let c = p.cos(p.TAU * ((-1.2+3*this.pots[5])*i+0.1*p.noise((p.millis()/100.0))) / leaf + rotation) / 3;
-          let d = p.sin(p.TAU * ((this.pots[6]-2.3*this.pots[5]+p.noise(p.millis()/10000.0)/2)*i) / leaf + rotation) / (1.2*i+0.1*p.noise((p.millis()/100.0)));
+          let il = i / layers;
+          let xx = (-1.2+3*this.pots[5])*il+7*p.noise((p.millis()/100.0))
+          let yy = (this.pots[6]-2.3*this.pots[5]+p.noise(p.millis()/10000.0)/2)*il*4;
+          let c = p.cos(p.TAU * (xx) / leaf + rotation);
+          let d = p.sin(p.TAU * (yy) / leaf + rotation);
+          let norm = p.max(p.abs(c), p.abs(d));
+          if (norm > 0) { c /= norm; d /= norm; }
+          c /= 3;
+          d /= 3;//(1.2*il+0.1*p.noise((p.millis()/100.0)));
         
           p.rectMode(p.CENTER)
           p.rect(p.width / 2 + (c * radius) * bounce, 
