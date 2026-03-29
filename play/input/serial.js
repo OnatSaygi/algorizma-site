@@ -5,10 +5,54 @@
 // Callback receives: { analog: [A0..A7], reset: bool, raw: string }
 
 (function () {
+const TARGET_VID = 0x1A86;
+const TARGET_PID = 0x7523;
+
 let _serialPort = null;
 let _reader = null;
 let _isOpen = false;
 let _onData = (data) => { console.log('Serial data:', data); };
+
+async function autoConnect() {
+  if (!('serial' in navigator)) return false;
+  if (_isOpen) return true;
+  const ports = await navigator.serial.getPorts();
+  const match = ports.find(p => {
+    const info = p.getInfo();
+    return info.usbVendorId === TARGET_VID && info.usbProductId === TARGET_PID;
+  });
+  if (!match) return false;
+  _serialPort = match;
+  try {
+    await _serialPort.open({ baudRate: 115200 });
+    _isOpen = true;
+    readLoop();
+    return true;
+  } catch (e) {
+    console.warn('autoConnect open failed', e);
+    _serialPort = null;
+    return false;
+  }
+}
+
+// Cihaz takılınca otomatik bağlan
+if ('serial' in navigator) {
+  navigator.serial.addEventListener('connect', async (e) => {
+    const info = e.port.getInfo();
+    if (info.usbVendorId === TARGET_VID && info.usbProductId === TARGET_PID && !_isOpen) {
+      _serialPort = e.port;
+      try {
+        await _serialPort.open({ baudRate: 115200 });
+        _isOpen = true;
+        readLoop();
+        window.dispatchEvent(new CustomEvent('serialAutoConnected'));
+      } catch (err) {
+        console.warn('hot-plug connect failed', err);
+        _serialPort = null;
+      }
+    }
+  });
+}
 
 async function connectSerial() {
   if (!('serial' in navigator)) throw new Error('Web Serial unsupported');
@@ -17,7 +61,7 @@ async function connectSerial() {
     await disconnectSerial();
   }
   try {
-    _serialPort = await navigator.serial.requestPort();
+    _serialPort = await navigator.serial.requestPort({ filters: [{ usbVendorId: TARGET_VID, usbProductId: TARGET_PID }] });
     await _serialPort.open({ baudRate: 115200 });
     _isOpen = true;
     readLoop();
@@ -124,5 +168,6 @@ window.SerialControl = {
   sendSerial,
   setSerialDataCallback,
   isConnected,
+  autoConnect,
 };
 })();

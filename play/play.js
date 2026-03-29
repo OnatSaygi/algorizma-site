@@ -83,12 +83,13 @@ function initUI() {
     connSelect.addEventListener('change', () => { activeSource = connSelect.value; updateUI(); });
 
     const embedSelect = uiDiv.querySelector('#embed-select');
-    // ensure LivingNet is the default selected sketch
-    embedSelect.value = 'LivingNet';
+    // ensure Mandala is the default selected sketch
+    embedSelect.value = 'Mandala';
     // auto-load the default selected sketch immediately
     if (!currentSketch) {
         if (embedSelect.value === 'ThymeFlows')     currentSketch = new ThymeFlows();
         else if (embedSelect.value === 'LivingNet') currentSketch = new LivingNet();
+        else if (embedSelect.value === 'Mandala')   currentSketch = new Mandala();
         wireDataCallbacks();
     }
 
@@ -121,6 +122,25 @@ function initUI() {
     // register callbacks immediately so data is buffered from the moment connections open
     wireDataCallbacks();
 
+    // CH340 (USB\VID_1A86&PID_7523) için otomatik bağlan
+    if (window.SerialControl && typeof window.SerialControl.autoConnect === 'function') {
+        window.SerialControl.autoConnect().then(connected => {
+            if (connected) {
+                isSerialConnected = true;
+                activeSource = 'serial';
+                connSelect.value = 'serial';
+                updateUI();
+            }
+        });
+    }
+    // Cihaz sonradan takılırsa bağlan
+    window.addEventListener('serialAutoConnected', () => {
+        isSerialConnected = true;
+        activeSource = 'serial';
+        connSelect.value = 'serial';
+        updateUI();
+    });
+
     function destroySketch() {
         if (currentSketch) { currentSketch._p5.remove(); currentSketch = null; }
     }
@@ -131,6 +151,7 @@ function initUI() {
         destroySketch();
         if      (name === 'ThymeFlows')     currentSketch = new ThymeFlows();
         else if (name === 'LivingNet') currentSketch = new LivingNet();
+        else if (name === 'Mandala')   currentSketch = new Mandala();
         wireDataCallbacks();
         updateUI();
     });
