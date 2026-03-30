@@ -15,12 +15,14 @@ function initUI() {
     const statusBluetoothEl = uiDiv.querySelector('#status-bluetooth');
     const statusSerialEl    = uiDiv.querySelector('#status-serial');
     const statusAutoEl      = uiDiv.querySelector('#status-autonomous');
+    const statusSlidersEl   = uiDiv.querySelector('#status-sliders');
     const activeSourceEl    = uiDiv.querySelector('#active-source');
 
     // connection flags
     let isBluetoothConnected = false;
     let isSerialConnected = false;
     let isAutonomousRunning = false;
+    let isSlidersConnected = false;
 
     function setConnStatus(txt) { connStatusDiv.textContent = txt; }
 
@@ -46,6 +48,12 @@ function initUI() {
                         try { await window.AutonomousControl.start(); isAutonomousRunning = true; } catch (_) { }
                     }
                     setConnStatus('autonomous');
+                } else if (method === 'sliders') {
+                    if (window.SliderControl && typeof window.SliderControl.connect === 'function') {
+                        await window.SliderControl.connect();
+                        isSlidersConnected = true;
+                        setConnStatus('sliders connected');
+                    } else { setConnStatus('sliders unavailable'); }
                 }
         } catch (e) {
             console.warn('connect failed', e);
@@ -66,9 +74,13 @@ function initUI() {
             if (window.AutonomousControl && typeof window.AutonomousControl.stop === 'function') {
                 try { await window.AutonomousControl.stop(); } catch (_) {}
             }
+            if (window.SliderControl && typeof window.SliderControl.disconnect === 'function') {
+                try { await window.SliderControl.disconnect(); } catch (_) {}
+            }
             isBluetoothConnected = false;
             isSerialConnected = false;
             isAutonomousRunning = false;
+            isSlidersConnected = false;
             setConnStatus('disconnected');
         } catch (e) { console.warn(e); }
         updateUI();
@@ -77,7 +89,7 @@ function initUI() {
     // ---- Sketch section ----
     let currentSketch = null;
     // latest raw data received from each source
-    const latestData = { bluetooth: null, serial: null, autonomous: null };
+    const latestData = { bluetooth: null, serial: null, autonomous: null, sliders: null };
     // which source feeds the sketch (mirrors the conn-select dropdown)
     let activeSource = connSelect.value;
     connSelect.addEventListener('change', () => { activeSource = connSelect.value; updateUI(); });
@@ -117,6 +129,9 @@ function initUI() {
         if (window.SerialControl)    window.SerialControl.setSerialDataCallback(makeHandler('serial'));
         if (window.AutonomousControl && typeof window.AutonomousControl.setAutonomousDataCallback === 'function') {
             window.AutonomousControl.setAutonomousDataCallback(makeHandler('autonomous'));
+        }
+        if (window.SliderControl && typeof window.SliderControl.setSliderDataCallback === 'function') {
+            window.SliderControl.setSliderDataCallback(makeHandler('sliders'));
         }
     }
     // register callbacks immediately so data is buffered from the moment connections open
@@ -164,13 +179,14 @@ function initUI() {
     // Update visual statuses for connections and currently active source
     function updateUI() {
         // summary status
-        const anyConnected = isBluetoothConnected || isSerialConnected || isAutonomousRunning;
+        const anyConnected = isBluetoothConnected || isSerialConnected || isAutonomousRunning || isSlidersConnected;
         if (anyConnected) setConnStatus('connected');
         else setConnStatus('idle');
 
         statusBluetoothEl.textContent = isBluetoothConnected ? 'connected' : 'disconnected';
         statusSerialEl.textContent = isSerialConnected ? 'connected' : 'disconnected';
         statusAutoEl.textContent = isAutonomousRunning ? 'running' : 'stopped';
+        if (statusSlidersEl) statusSlidersEl.textContent = isSlidersConnected ? 'connected' : 'disconnected';
 
         activeSourceEl.textContent = activeSource || '-';
     }

@@ -63,6 +63,7 @@
                 <option value="bluetooth">Bluetooth</option>
                 <option value="serial">Serial</option>
                 <option value="autonomous">Autonomous</option>
+                <option value="sliders">Sliders</option>
             </select>
             <button id="conn-connect">Connect</button>
             <button id="conn-disconnect">Disconnect</button>
@@ -72,6 +73,7 @@
             <div>Bluetooth: <span id="status-bluetooth">disconnected</span></div>
             <div>Serial: <span id="status-serial">disconnected</span></div>
             <div>Autonomous: <span id="status-autonomous">stopped</span></div>
+            <div>Sliders: <span id="status-sliders">disconnected</span></div>
         </div>
         <div id="conn-active" style="font-size:11px;margin-bottom:4px;opacity:0.9">Playing: <span id="active-source">-</span></div>
         <hr style="border-color:rgba(255,255,255,0.2);margin:6px 0">
@@ -119,5 +121,6 @@
     <script src="input/bluetooth.js"></script>
     <script src="input/serial.js"></script>
     <script src="input/autonomous.js"></script>
+    <script src="input/sliders.js"></script>
   </body>
 </html>
