@@ -57,41 +57,43 @@ class Mandala {
       p.background(0, 7);
       for (let i = 0; i < layers; i++) {
         let il = i / layers;
-        let timer = ((p.millis()+10035) / 3500) + this.pots[2] * 5;
-        let rotation = (p.PI / leaf) * timer * i;
+        let timer = ((p.millis()+10035) / 1500) + this.pots[2] * 5;
+        let rotation = p.PI * timer * il;
         
         // size
         let size_ = p.min(p.width / 2, p.height / 2) * (this.pots[3]*3+0.5);
         let perlin = p.pow(p.noise(p.millis() / 600.0 + i * this.pots[2] * 0.07), this.pots[7] * 3 + 2);
-        let radius = size_ * (1-(i / layers));
+        let radius = size_ * (1-il);
         radius *= 1.0;
         
         // color
         let epylepsy = p.noise(p.millis() / 5000) * 400;
-        let perlin2 = p.noise(p.millis() / 888 + i / 10 * (this.pots[6]+0.1) * p.pow(this.pots[6], 0.5) + 10000) * epylepsy % 100;
+        let perlin2 = p.noise(p.millis() / 888 + i / 10 * (this.pots[6]+0.03) * p.pow(this.pots[6], 0.5) + 10000) * epylepsy % 100;
         p.stroke(
           perlin2,
           p.randomGaussian(this.pots[5] * 200, 20) + p.noise(p.millis()/100.0/(this.pots[6]+.1))*20,
           p.randomGaussian(100, this.pots[6] * 20),
-          this.pots[4] * 100 * (1-this.pots[0]*0.99)
+          p.pow(p.abs(0.5 -this.pots[4]/0.99)*1.7, 2)*100 * (1-this.pots[0]*0.99)
           )
         p.fill(
           100-perlin2,
           p.noise(p.millis()/100.0%1)*20,
           p.randomGaussian(100, 1),
-          (100 - this.pots[4] * 100)  * (p.pow(1-this.pots[0]*0.99, 3))
+          (1-p.pow(p.abs(0.5 -this.pots[4]/0.99)*1.7, 2)) * 100 * (p.pow(1-this.pots[0]*0.99, 3))
         );
 
         for (let i = 0; i < leaf; i++) {
           let il = i / layers;
           let xx = (-1.2+3*this.pots[5])*il+7*p.noise((p.millis()/100.0))
           let yy = (this.pots[6]-2.3*this.pots[5]+p.noise(p.millis()/10000.0)/2)*il*4;
-          let c = p.cos(p.TAU * (xx) / leaf + rotation);
-          let d = p.sin(p.TAU * (yy) / leaf + rotation);
+          let c = p.cos(p.TAU * (xx) * il + rotation);
+          let d = p.sin(p.TAU * (yy) / il + rotation);
           let norm = p.max(p.abs(c), p.abs(d));
           if (norm > 0) { c /= norm; d /= norm; }
           c /= 3;
           d /= 3;//(1.2*il+0.1*p.noise((p.millis()/100.0)));
+          radius *= (1-il);
+
         
           p.rectMode(p.CENTER)
           p.rect(p.width / 2 + (c * radius) * bounce, 
