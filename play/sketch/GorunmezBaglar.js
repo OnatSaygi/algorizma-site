@@ -2,6 +2,8 @@
 // Single-class p5 instance-mode sketch for algorizma-site/play
 // Usage: new GorunmezBaglar()
 
+p5.disableFriendlyErrors = true;
+
 class GorunmezBaglar {
   constructor(config = {}) {
     this.pots = new Array(9).fill(0.5);
@@ -19,11 +21,13 @@ class GorunmezBaglar {
     this._p5 = new p5(p => this._sketch(p));
 
     // Sketch değiştirildiğinde (_p5.remove çağrıldığında) UI ve eventleri temizle
-    const origRemove = this._p5.remove.bind(this._p5);
-    this._p5.remove = () => {
-      this._cleanup();
-      origRemove();
-    };
+    if (this._p5 && typeof this._p5.remove === 'function') {
+      const origRemove = this._p5.remove.bind(this._p5);
+      this._p5.remove = () => {
+        this._cleanup();
+        origRemove();
+      };
+    }
   }
 
   _cleanup() {
@@ -40,6 +44,25 @@ class GorunmezBaglar {
   _sketch(p) {
     const BASE_RADIUS = 360;
     const cfg = this.cfg;
+
+    // Saf JS matematik yardımcıları (p5 v1 ve v2 farklarından %100 bağımsız)
+    const PI = Math.PI;
+    const TWO_PI = Math.PI * 2;
+    const HALF_PI = Math.PI / 2;
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const constrain = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const map = (v, inMin, inMax, outMin, outMax) =>
+      outMin + ((v - inMin) / (inMax - inMin)) * (outMax - outMin);
+    const rand = (min = 0, max = 1) =>
+      min + Math.random() * (max - min);
+
+    const rgba = (r, g, b, a255) =>
+      `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${constrain(a255 / 255, 0, 1).toFixed(3)})`;
+
+    const evalBezier = (a, b, c, d, t) => {
+      const mt = 1 - t;
+      return mt * mt * mt * a + 3 * mt * mt * t * b + 3 * mt * t * t * c + t * t * t * d;
+    };
 
     const PLANT_TYPES = {
       mimosa: {
@@ -126,28 +149,10 @@ class GorunmezBaglar {
 
     const PLANT_LIST = Object.values(PLANT_TYPES);
 
-    // Kübik Bezier nokta hesaplayıcı (p5 v1 ve v2 tam uyumlu)
-    const evalBezier = (a, b, c, d, t) => {
-      const mt = 1 - t;
-      return mt * mt * mt * a + 3 * mt * mt * t * b + 3 * mt * t * t * c + t * t * t * d;
-    };
-
-    // Kuadratik Bezier eğrisi çizici (p5 v1 ve v2 tam uyumlu)
-    const drawQuadCurve = (x0, y0, cx, cy, x1, y1, steps = 8) => {
-      p.beginShape();
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const mt = 1 - t;
-        const x = mt * mt * x0 + 2 * mt * t * cx + t * t * x1;
-        const y = mt * mt * y0 + 2 * mt * t * cy + t * t * y1;
-        p.vertex(x, y);
-      }
-      p.endShape();
-    };
-
     let organism = null;
     let ripples = [];
     let floatingFibers = [];
+    let lastTimeSec = 0;
 
     // RFID Simülatör Durumu
     const rfidState = {
@@ -179,15 +184,16 @@ class GorunmezBaglar {
           this.delay--;
           return;
         }
-        this.r = p.lerp(this.r, this.maxR, 0.035);
+        this.r = lerp(this.r, this.maxR, 0.035);
         this.alpha *= 0.965;
       }
-      display() {
+      display(ctx) {
         if (this.delay > 0) return;
-        p.noFill();
-        p.stroke(this.color[0], this.color[1], this.color[2], this.alpha);
-        p.strokeWeight(p.map(this.alpha, 0, 210, 0.4, 2.2));
-        p.circle(this.x, this.y, this.r * 2);
+        ctx.strokeStyle = rgba(this.color[0], this.color[1], this.color[2], this.alpha);
+        ctx.lineWidth = map(this.alpha, 0, 210, 0.4, 2.2);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, TWO_PI);
+        ctx.stroke();
       }
       isDead() {
         return this.alpha < 2.5;
@@ -197,12 +203,12 @@ class GorunmezBaglar {
     // ── Suda Yüzen Lifler ───────────────────────────────────────────────────
     class FloatingFiber {
       constructor() {
-        this.angle = p.random(p.TWO_PI);
-        this.distRatio = Math.sqrt(p.random(0.05, 0.95));
-        this.speed = p.random(0.0008, 0.0025) * (p.random() < 0.5 ? 1 : -1);
-        this.len = p.random(4, 12);
-        this.alpha = p.random(35, 95);
-        this.phase = p.random(p.TWO_PI);
+        this.angle = rand(0, TWO_PI);
+        this.distRatio = Math.sqrt(rand(0.05, 0.95));
+        this.speed = rand(0.0008, 0.0025) * (Math.random() < 0.5 ? 1 : -1);
+        this.len = rand(4, 12);
+        this.alpha = rand(35, 95);
+        this.phase = rand(0, TWO_PI);
         this.x = 0;
         this.y = 0;
         this.orient = 0;
@@ -212,17 +218,21 @@ class GorunmezBaglar {
         const r = this.distRatio * basinRadius;
         this.x = Math.cos(this.angle) * r + Math.sin(time + this.phase) * 4;
         this.y = Math.sin(this.angle) * r + Math.cos(time + this.phase) * 4;
-        this.orient = this.angle + p.HALF_PI + Math.sin(time * 0.7 + this.phase) * 0.5;
+        this.orient = this.angle + HALF_PI + Math.sin(time * 0.7 + this.phase) * 0.5;
       }
-      display() {
-        p.stroke(215, 200, 165, this.alpha);
-        p.strokeWeight(0.85);
-        p.line(
+      display(ctx) {
+        ctx.strokeStyle = rgba(215, 200, 165, this.alpha);
+        ctx.lineWidth = 0.85;
+        ctx.beginPath();
+        ctx.moveTo(
           this.x - Math.cos(this.orient) * this.len * 0.5,
-          this.y - Math.sin(this.orient) * this.len * 0.5,
+          this.y - Math.sin(this.orient) * this.len * 0.5
+        );
+        ctx.lineTo(
           this.x + Math.cos(this.orient) * this.len * 0.5,
           this.y + Math.sin(this.orient) * this.len * 0.5
         );
+        ctx.stroke();
       }
     }
 
@@ -236,7 +246,7 @@ class GorunmezBaglar {
         this.segments = [];
         this.invisibleBonds = [];
         this.growthProgress = 0;
-        this.growthSpeed = 0.42;
+        this.growthSpeed = 0.45;
         this.dissolving = false;
         this.dissolveAlpha = 1.0;
         this.generateStructure();
@@ -254,7 +264,7 @@ class GorunmezBaglar {
           result.push({
             stageIndex: i,
             historyStep: histIdx,
-            plant: PLANT_TYPES[plantId]
+            plant: PLANT_TYPES[plantId] || PLANT_TYPES.moss
           });
         }
         return result;
@@ -277,8 +287,8 @@ class GorunmezBaglar {
         const baseSegmentLen = this.maxRadius / (this.stages.length + 0.65);
 
         for (let i = 0; i < initialTrunkCount; i++) {
-          const baseAngle = (p.TWO_PI / initialTrunkCount) * i + p.random(-0.12, 0.12);
-          const len = baseSegmentLen * p.random(0.85, 1.08);
+          const baseAngle = (TWO_PI / initialTrunkCount) * i + rand(-0.12, 0.12);
+          const len = baseSegmentLen * rand(0.85, 1.08);
           const seg = this.createSegment(rootNode, baseAngle, len, 0, i);
           this.segments.push(seg);
           this.nodes.push(seg.endNode);
@@ -299,12 +309,12 @@ class GorunmezBaglar {
             for (let b = 0; b < bCount; b++) {
               let spreadOffset = 0;
               if (bCount > 1) {
-                spreadOffset = p.map(b, 0, bCount - 1, -pm.branchAngle, pm.branchAngle);
+                spreadOffset = map(b, 0, bCount - 1, -pm.branchAngle, pm.branchAngle);
               }
-              const jitter = p.random(-0.14, 0.14) * (1 + pm.curvature * 0.4);
+              const jitter = rand(-0.14, 0.14) * (1 + pm.curvature * 0.4);
               const newAngle = parentNode.angle + spreadOffset + jitter;
               const stageScale = Math.pow(pm.lengthScale, s * 0.55);
-              const len = baseSegmentLen * stageScale * p.random(0.82, 1.14);
+              const len = baseSegmentLen * stageScale * rand(0.82, 1.14);
 
               const seg = this.createSegment(parentNode, newAngle, len, s, b);
               this.segments.push(seg);
@@ -321,11 +331,11 @@ class GorunmezBaglar {
       createSegment(startNode, angle, length, stageIndex, branchIndex) {
         const plant = this.stages[stageIndex].plant;
         const pm = plant.params;
-        const noiseSeedVal = p.random(1000);
+        const noiseSeedVal = rand(0, 1000);
 
         const curveDir = (branchIndex % 2 === 0 ? 1 : -1) * pm.curvature;
-        const midAngle1 = angle + curveDir * 0.28 + p.random(-0.1, 0.1);
-        const midAngle2 = angle - curveDir * 0.18 + p.random(-0.1, 0.1);
+        const midAngle1 = angle + curveDir * 0.28 + rand(-0.1, 0.1);
+        const midAngle2 = angle - curveDir * 0.18 + rand(-0.1, 0.1);
 
         const endX = startNode.x + Math.cos(angle) * length;
         const endY = startNode.y + Math.sin(angle) * length;
@@ -347,10 +357,10 @@ class GorunmezBaglar {
         const strands = [];
         for (let i = 0; i < pm.fiberStrands; i++) {
           strands.push({
-            offsetPhase: p.random(p.TWO_PI),
-            spreadRatio: p.map(i, 0, pm.fiberStrands - 1, -1, 1),
-            weight: p.random(0.6, 1.55),
-            alphaRatio: p.random(0.45, 0.95)
+            offsetPhase: rand(0, TWO_PI),
+            spreadRatio: map(i, 0, pm.fiberStrands - 1, -1, 1),
+            weight: rand(0.6, 1.55),
+            alphaRatio: rand(0.45, 0.95)
           });
         }
 
@@ -384,13 +394,13 @@ class GorunmezBaglar {
             const d = Math.hypot(nA.x - nB.x, nA.y - nB.y);
 
             if (d > 28 && d < this.maxRadius * 0.42) {
-              if (p.random() < density * 0.14 && this.invisibleBonds.length < 160) {
+              if (Math.random() < density * 0.14 && this.invisibleBonds.length < 160) {
                 this.invisibleBonds.push({
                   nodeA: nA,
                   nodeB: nB,
                   stageIndex: Math.max(nA.stageIndex, nB.stageIndex),
-                  slack: p.random(12, 36) * (p.random() < 0.5 ? 1 : -1),
-                  phase: p.random(p.TWO_PI),
+                  slack: rand(12, 36) * (Math.random() < 0.5 ? 1 : -1),
+                  phase: rand(0, TWO_PI),
                   color: nA.plant.colorSecondary
                 });
               }
@@ -407,50 +417,51 @@ class GorunmezBaglar {
         return this.dissolving && this.dissolveAlpha <= 0.02;
       }
 
-      update(time) {
+      update(dt) {
         if (this.dissolving) {
           this.dissolveAlpha *= 0.93;
         } else if (this.growthProgress < this.stages.length + 0.5) {
-          const dt = (p.deltaTime || 16.6) * 0.001;
           this.growthProgress += dt * this.growthSpeed;
         }
       }
 
-      display(time) {
+      display(ctx, time) {
         const masterAlpha = this.dissolveAlpha;
-        this.drawInvisibleBonds(time, masterAlpha);
+        this.drawInvisibleBonds(ctx, time, masterAlpha);
 
         for (const seg of this.segments) {
-          const localGrowth = p.constrain(this.growthProgress - seg.stageIndex, 0, 1);
+          const localGrowth = constrain(this.growthProgress - seg.stageIndex, 0, 1);
           if (localGrowth <= 0.001) continue;
           const easedGrowth = 1 - Math.pow(1 - localGrowth, 3);
-          this.drawSegment(seg, easedGrowth, time, masterAlpha);
+          this.drawSegment(ctx, seg, easedGrowth, time, masterAlpha);
         }
 
-        this.drawSeedCore(time, masterAlpha);
+        this.drawSeedCore(ctx, time, masterAlpha);
       }
 
-      drawInvisibleBonds(time, masterAlpha) {
-        p.noFill();
+      drawInvisibleBonds(ctx, time, masterAlpha) {
         for (const bond of this.invisibleBonds) {
-          const localGrowth = p.constrain(this.growthProgress - bond.stageIndex - 0.2, 0, 1);
+          const localGrowth = constrain(this.growthProgress - bond.stageIndex - 0.2, 0, 1);
           if (localGrowth <= 0) continue;
 
           const c = bond.color;
           const pulse = 0.65 + 0.35 * Math.sin(time * 1.8 + bond.phase);
-          p.stroke(c[0], c[1], c[2], 52 * localGrowth * pulse * masterAlpha);
-          p.strokeWeight(0.75);
+          ctx.strokeStyle = rgba(c[0], c[1], c[2], 52 * localGrowth * pulse * masterAlpha);
+          ctx.lineWidth = 0.75;
 
           const midX = (bond.nodeA.x + bond.nodeB.x) * 0.5 + Math.sin(time + bond.phase) * bond.slack * 0.35;
           const midY = (bond.nodeA.y + bond.nodeB.y) * 0.5 + Math.cos(time + bond.phase) * bond.slack * 0.35;
           const tx = bond.nodeB.x * localGrowth + bond.nodeA.x * (1 - localGrowth);
           const ty = bond.nodeB.y * localGrowth + bond.nodeA.y * (1 - localGrowth);
 
-          drawQuadCurve(bond.nodeA.x, bond.nodeA.y, midX, midY, tx, ty, 8);
+          ctx.beginPath();
+          ctx.moveTo(bond.nodeA.x, bond.nodeA.y);
+          ctx.quadraticCurveTo(midX, midY, tx, ty);
+          ctx.stroke();
         }
       }
 
-      drawSegment(seg, growth, time, masterAlpha) {
+      drawSegment(ctx, seg, growth, time, masterAlpha) {
         const pm = seg.plant.params;
         const colPri = seg.plant.colorPrimary;
         const colSec = seg.plant.colorSecondary;
@@ -466,7 +477,7 @@ class GorunmezBaglar {
           let by = evalBezier(seg.startNode.y, seg.cp1.y, seg.cp2.y, seg.endNode.y, t);
 
           const swayAmt = t * seg.length * Math.sin(swayAngle);
-          const perpAngle = seg.angle + p.HALF_PI;
+          const perpAngle = seg.angle + HALF_PI;
           bx += Math.cos(perpAngle) * swayAmt;
           by += Math.sin(perpAngle) * swayAmt;
 
@@ -474,45 +485,51 @@ class GorunmezBaglar {
         }
 
         // A) İç çelik tel omurga
-        p.noFill();
-        p.stroke(colGlow[0], colGlow[1], colGlow[2], 115 * masterAlpha);
-        p.strokeWeight(Math.max(0.7, (this.stages.length - seg.stageIndex) * 0.45));
-        p.beginShape();
-        for (const pt of spinePoints) p.vertex(pt.x, pt.y);
-        p.endShape();
+        ctx.strokeStyle = rgba(colGlow[0], colGlow[1], colGlow[2], 115 * masterAlpha);
+        ctx.lineWidth = Math.max(0.7, (this.stages.length - seg.stageIndex) * 0.45);
+        ctx.beginPath();
+        for (let i = 0; i < spinePoints.length; i++) {
+          if (i === 0) ctx.moveTo(spinePoints[i].x, spinePoints[i].y);
+          else ctx.lineTo(spinePoints[i].x, spinePoints[i].y);
+        }
+        ctx.stroke();
 
         // B) Dış jüt iplikleri
-        const perpX = Math.cos(seg.angle + p.HALF_PI);
-        const perpY = Math.sin(seg.angle + p.HALF_PI);
+        const perpX = Math.cos(seg.angle + HALF_PI);
+        const perpY = Math.sin(seg.angle + HALF_PI);
 
         for (const strand of seg.strands) {
           const mix = (strand.spreadRatio + 1) * 0.5;
-          p.stroke(
-            p.lerp(colPri[0], colSec[0], mix),
-            p.lerp(colPri[1], colSec[1], mix),
-            p.lerp(colPri[2], colSec[2], mix),
+          ctx.strokeStyle = rgba(
+            lerp(colPri[0], colSec[0], mix),
+            lerp(colPri[1], colSec[1], mix),
+            lerp(colPri[2], colSec[2], mix),
             165 * strand.alphaRatio * masterAlpha
           );
-          p.strokeWeight(strand.weight * p.map(seg.stageIndex, 0, this.stages.length, 1.3, 0.65));
+          ctx.lineWidth = strand.weight * map(seg.stageIndex, 0, this.stages.length, 1.3, 0.65);
 
-          p.beginShape();
-          for (const pt of spinePoints) {
-            const twist = Math.sin(pt.t * Math.PI * 3.5 + strand.offsetPhase + time * 0.9);
-            const envelope = Math.sin(pt.t * Math.PI) * pm.fiberSpread * (1 - seg.stageIndex * 0.12);
+          ctx.beginPath();
+          for (let i = 0; i < spinePoints.length; i++) {
+            const pt = spinePoints[i];
+            const twist = Math.sin(pt.t * PI * 3.5 + strand.offsetPhase + time * 0.9);
+            const envelope = Math.sin(pt.t * PI) * pm.fiberSpread * (1 - seg.stageIndex * 0.12);
             const offset = strand.spreadRatio * envelope * twist;
-            p.vertex(pt.x + perpX * offset, pt.y + perpY * offset);
+            const sx = pt.x + perpX * offset;
+            const sy = pt.y + perpY * offset;
+            if (i === 0) ctx.moveTo(sx, sy);
+            else ctx.lineTo(sx, sy);
           }
-          p.endShape();
+          ctx.stroke();
         }
 
         // C) Bitkiye özgü organlar
         if (growth > 0.25) {
-          const organAlpha = p.map(growth, 0.25, 1, 0, 1) * masterAlpha;
-          this.drawBotanicalOrgans(seg, spinePoints, time, organAlpha);
+          const organAlpha = map(growth, 0.25, 1, 0, 1) * masterAlpha;
+          this.drawBotanicalOrgans(ctx, seg, spinePoints, time, organAlpha);
         }
       }
 
-      drawBotanicalOrgans(seg, spinePoints, time, alpha) {
+      drawBotanicalOrgans(ctx, seg, spinePoints, time, alpha) {
         const type = seg.plant.params.foliageType;
         const colPri = seg.plant.colorPrimary;
         const colSec = seg.plant.colorSecondary;
@@ -520,34 +537,39 @@ class GorunmezBaglar {
 
         if (type === 'pinnate') {
           const foldWave = Math.sin(time * 2.4 - seg.stageIndex * 1.1 + seg.noiseSeedVal);
-          const foldRatio = p.constrain(p.map(foldWave, 0.15, 0.95, 0, 1), 0, 1);
+          const foldRatio = constrain(map(foldWave, 0.15, 0.95, 0, 1), 0, 1);
 
           for (let i = 2; i < spinePoints.length - 1; i += 2) {
             const pt = spinePoints[i];
-            const leafletLen = p.map(i, 0, spinePoints.length, 18, 8) * (1 - seg.stageIndex * 0.1);
-            const openAngle = p.lerp(Math.PI * 0.42, Math.PI * 0.08, foldRatio);
+            const leafletLen = map(i, 0, spinePoints.length, 18, 8) * (1 - seg.stageIndex * 0.1);
+            const openAngle = lerp(PI * 0.42, PI * 0.08, foldRatio);
 
             for (const side of [-1, 1]) {
               const leafAngle = seg.angle + side * openAngle;
               const lx = pt.x + Math.cos(leafAngle) * leafletLen;
               const ly = pt.y + Math.sin(leafAngle) * leafletLen;
 
-              p.stroke(colPri[0], colPri[1], colPri[2], 190 * alpha);
-              p.strokeWeight(1.1);
-              p.line(pt.x, pt.y, lx, ly);
+              ctx.strokeStyle = rgba(colPri[0], colPri[1], colPri[2], 190 * alpha);
+              ctx.lineWidth = 1.1;
+              ctx.beginPath();
+              ctx.moveTo(pt.x, pt.y);
+              ctx.lineTo(lx, ly);
+              ctx.stroke();
 
-              p.noStroke();
-              p.fill(colGlow[0], colGlow[1], colGlow[2], (140 + 90 * foldRatio) * alpha);
-              p.circle(lx, ly, 2.6);
+              ctx.fillStyle = rgba(colGlow[0], colGlow[1], colGlow[2], (140 + 90 * foldRatio) * alpha);
+              ctx.beginPath();
+              ctx.arc(lx, ly, 1.3, 0, TWO_PI);
+              ctx.fill();
             }
           }
         } else if (type === 'fronds') {
+          ctx.strokeStyle = rgba(colPri[0], colPri[1], colPri[2], 135 * alpha);
+          ctx.lineWidth = 0.95;
           for (let i = 3; i < spinePoints.length; i += 3) {
             const pt = spinePoints[i];
             const frondCount = 3;
-            const baseLen = p.map(i, 0, spinePoints.length, 32, 16);
+            const baseLen = map(i, 0, spinePoints.length, 32, 16);
 
-            p.noFill();
             for (let f = -frondCount; f <= frondCount; f++) {
               if (f === 0) continue;
               const spreadAngle = seg.angle + f * 0.24 + Math.sin(time * 1.2 + i) * 0.06;
@@ -556,29 +578,32 @@ class GorunmezBaglar {
               const cpx = pt.x + Math.cos(spreadAngle - f * 0.12) * (baseLen * 0.6);
               const cpy = pt.y + Math.sin(spreadAngle - f * 0.12) * (baseLen * 0.6);
 
-              p.stroke(colPri[0], colPri[1], colPri[2], 135 * alpha);
-              p.strokeWeight(0.95);
-              drawQuadCurve(pt.x, pt.y, cpx, cpy, fx, fy, 6);
+              ctx.beginPath();
+              ctx.moveTo(pt.x, pt.y);
+              ctx.quadraticCurveTo(cpx, cpy, fx, fy);
+              ctx.stroke();
             }
           }
         } else if (type === 'spiny_fur') {
-          p.noFill();
+          ctx.strokeStyle = rgba(colPri[0], colPri[1], colPri[2], 150 * alpha);
+          ctx.lineWidth = 0.8;
           for (let i = 1; i < spinePoints.length; i++) {
             const pt = spinePoints[i];
             for (let h = 0; h < 4; h++) {
               const side = h % 2 === 0 ? 1 : -1;
               const hairPhase = i * 0.7 + h * 1.9 + seg.noiseSeedVal;
               const hairLen = (14 + Math.sin(hairPhase) * 7) * (1 - pt.t * 0.3);
-              const hairAngle = seg.angle + side * (p.HALF_PI * 0.65) + Math.sin(time * 1.8 + hairPhase) * 0.25;
+              const hairAngle = seg.angle + side * (HALF_PI * 0.65) + Math.sin(time * 1.8 + hairPhase) * 0.25;
 
               const hx = pt.x + Math.cos(hairAngle) * hairLen;
               const hy = pt.y + Math.sin(hairAngle) * hairLen;
               const cx = pt.x + Math.cos(hairAngle + side * 0.3) * (hairLen * 0.55);
               const cy = pt.y + Math.sin(hairAngle + side * 0.3) * (hairLen * 0.55);
 
-              p.stroke(colPri[0], colPri[1], colPri[2], 150 * alpha);
-              p.strokeWeight(0.8);
-              drawQuadCurve(pt.x, pt.y, cx, cy, hx, hy, 6);
+              ctx.beginPath();
+              ctx.moveTo(pt.x, pt.y);
+              ctx.quadraticCurveTo(cx, cy, hx, hy);
+              ctx.stroke();
             }
           }
         } else if (type === 'moss_web') {
@@ -587,39 +612,45 @@ class GorunmezBaglar {
             const clusterRadius = 10 + 5 * Math.sin(i * 1.3 + seg.noiseSeedVal);
 
             for (let m = 0; m < 5; m++) {
-              const a = (p.TWO_PI / 5) * m + i + time * 0.4;
+              const a = (TWO_PI / 5) * m + i + time * 0.4;
               const r = clusterRadius * (0.6 + 0.4 * Math.sin(time * 2 + m));
               const mx = pt.x + Math.cos(a) * r;
               const my = pt.y + Math.sin(a) * r;
 
-              p.stroke(colSec[0], colSec[1], colSec[2], 125 * alpha);
-              p.strokeWeight(0.8);
-              p.line(pt.x, pt.y, mx, my);
+              ctx.strokeStyle = rgba(colSec[0], colSec[1], colSec[2], 125 * alpha);
+              ctx.lineWidth = 0.8;
+              ctx.beginPath();
+              ctx.moveTo(pt.x, pt.y);
+              ctx.lineTo(mx, my);
+              ctx.stroke();
 
-              p.noStroke();
-              p.fill(colGlow[0], colGlow[1], colGlow[2], 165 * alpha);
-              p.circle(mx, my, 2.2);
+              ctx.fillStyle = rgba(colGlow[0], colGlow[1], colGlow[2], 165 * alpha);
+              ctx.beginPath();
+              ctx.arc(mx, my, 1.1, 0, TWO_PI);
+              ctx.fill();
             }
           }
         }
       }
 
-      drawSeedCore(time, masterAlpha) {
+      drawSeedCore(ctx, time, masterAlpha) {
         const pulse = 1 + 0.12 * Math.sin(time * 3);
-        p.noFill();
+        ctx.lineWidth = 1.5;
         for (let i = 0; i < this.historyIds.length; i++) {
-          const pl = PLANT_TYPES[this.historyIds[i]];
+          const pl = PLANT_TYPES[this.historyIds[i]] || PLANT_TYPES.moss;
           const col = pl.colorPrimary;
           const r = (8 + i * 5.5) * pulse;
-          p.stroke(col[0], col[1], col[2], 180 * masterAlpha);
-          p.strokeWeight(1.5);
+          ctx.strokeStyle = rgba(col[0], col[1], col[2], 180 * masterAlpha);
           const startA = time * (i % 2 === 0 ? 1 : -1) + i;
-          p.arc(0, 0, r * 2, r * 2, startA, startA + Math.PI * 1.55);
+          ctx.beginPath();
+          ctx.arc(0, 0, r, startA, startA + PI * 1.55);
+          ctx.stroke();
         }
 
-        p.noStroke();
-        p.fill(255, 245, 220, 220 * masterAlpha);
-        p.circle(0, 0, 7 * pulse);
+        ctx.fillStyle = rgba(255, 245, 220, 220 * masterAlpha);
+        ctx.beginPath();
+        ctx.arc(0, 0, 3.5 * pulse, 0, TWO_PI);
+        ctx.fill();
       }
     }
 
@@ -642,7 +673,7 @@ class GorunmezBaglar {
       if (seed.history.length >= 8) seed.history.shift();
       seed.history.push(plantId);
 
-      const angle = p.random(p.TWO_PI);
+      const angle = rand(0, TWO_PI);
       ripples.push(new WaterRipple(Math.cos(angle) * BASE_RADIUS * 0.7, Math.sin(angle) * BASE_RADIUS * 0.7, BASE_RADIUS * 0.4, plant.colorPrimary));
       updateSimulatorUI();
     };
@@ -687,6 +718,9 @@ class GorunmezBaglar {
 
     // ── Sol Kontrol Paneli (DOM) ────────────────────────────────────────────
     const mountSimulatorUI = () => {
+      const existing = document.getElementById('gb-simulator-panel');
+      if (existing) existing.remove();
+
       const style = document.createElement('style');
       style.textContent = `
         #gb-simulator-panel {
@@ -797,7 +831,7 @@ class GorunmezBaglar {
         tl.innerHTML = `<span style="color:#7d7668">Henüz hiçbir bitki heykeline okutulmadı.</span>`;
       } else {
         tl.innerHTML = seed.history.map((id, i) => {
-          const pl = PLANT_TYPES[id];
+          const pl = PLANT_TYPES[id] || PLANT_TYPES.moss;
           const col = `rgb(${pl.colorPrimary.join(',')})`;
           return `<div class="gb-step" style="border-color:${col}"><span style="font-size:8.5px;color:#8f887a">${i + 1}. EVRE</span><strong style="color:${col}">${pl.name}</strong></div>`;
         }).join('<span style="color:#6e675b">→</span>');
@@ -827,34 +861,44 @@ class GorunmezBaglar {
       };
     };
 
-    const drawWaterAmbience = (radius, time) => {
-      p.noFill();
+    const drawWaterAmbience = (ctx, radius, time) => {
+      ctx.strokeStyle = rgba(35, 48, 46, 40);
+      ctx.lineWidth = 1;
       for (let i = 1; i <= 4; i++) {
         const r = radius * (i / 4) * (0.97 + 0.02 * Math.sin(time * 0.8 + i));
-        p.stroke(35, 48, 46, 28);
-        p.strokeWeight(1);
-        p.beginShape();
-        for (let a = 0; a < p.TWO_PI; a += 0.15) {
-          const n = p.noise(Math.cos(a) * 1.5 + i, Math.sin(a) * 1.5, time * 0.25);
-          const rad = r + p.map(n, 0, 1, -8, 8);
-          p.vertex(Math.cos(a) * rad, Math.sin(a) * rad);
+        ctx.beginPath();
+        for (let step = 0; step <= 42; step++) {
+          const a = (step / 42) * TWO_PI;
+          const wave = Math.sin(a * 3 + time * 0.9 + i) * 4 + Math.cos(a * 5 - time * 0.6) * 3;
+          const rad = r + wave;
+          const vx = Math.cos(a) * rad;
+          const vy = Math.sin(a) * rad;
+          if (step === 0) ctx.moveTo(vx, vy);
+          else ctx.lineTo(vx, vy);
         }
-        p.endShape(p.CLOSE);
+        ctx.closePath();
+        ctx.stroke();
       }
     };
 
-    const drawIdleFountainCore = (time) => {
+    const drawIdleFountainCore = (ctx, time) => {
       const pulse = 14 + Math.sin(time * 2.2) * 5;
-      p.noFill();
-      p.stroke(180, 195, 175, 50 + Math.sin(time * 2.2) * 25);
-      p.strokeWeight(1.2);
-      p.circle(0, 0, pulse * 2);
-      p.stroke(220, 200, 165, 90);
-      p.circle(0, 0, 8);
+      ctx.strokeStyle = rgba(180, 195, 175, 50 + Math.sin(time * 2.2) * 25);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(0, 0, pulse, 0, TWO_PI);
+      ctx.stroke();
+
+      ctx.strokeStyle = rgba(220, 200, 165, 90);
+      ctx.beginPath();
+      ctx.arc(0, 0, 4, 0, TWO_PI);
+      ctx.stroke();
     };
 
     // ── p5 Lifecycle ────────────────────────────────────────────────────────
     p.setup = () => {
+      p.frameRate(60);
+      p.pixelDensity(1);
       p.createCanvas(p.windowWidth, p.windowHeight);
       Object.assign(p.canvas.style, {
         position: 'fixed', top: '0', left: '0', zIndex: '0'
@@ -867,6 +911,7 @@ class GorunmezBaglar {
 
       mountSimulatorUI();
       placeInFountain();
+      lastTimeSec = p.millis() * 0.001;
 
       this._keyHandler = (e) => {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
@@ -887,9 +932,9 @@ class GorunmezBaglar {
         } else if (k === 'b' || k === 'B') {
           cfg.showBasinRing = !cfg.showBasinRing;
         } else if (k === '+' || k === '=') {
-          cfg.radiusScale = p.constrain(cfg.radiusScale + 0.02, 0.1, 1.5);
+          cfg.radiusScale = constrain(cfg.radiusScale + 0.02, 0.1, 1.5);
         } else if (k === '-' || k === '_') {
-          cfg.radiusScale = p.constrain(cfg.radiusScale - 0.02, 0.1, 1.5);
+          cfg.radiusScale = constrain(cfg.radiusScale - 0.02, 0.1, 1.5);
         } else {
           const step = e.shiftKey ? 15 : 4;
           if (k === 'ArrowLeft') cfg.offsetX -= step;
@@ -907,63 +952,67 @@ class GorunmezBaglar {
 
     p.draw = () => {
       p.background(0);
+      const ctx = p.drawingContext;
+      const nowSec = p.millis() * 0.001;
+      const dt = constrain(nowSec - lastTimeSec, 0.001, 0.1);
+      lastTimeSec = nowSec;
+
+      ctx.save();
 
       const center = getBasinCenter();
       const radius = getBasinRadius();
       const sceneScale = radius / BASE_RADIUS;
-      const time = p.millis() * 0.001;
 
-      p.push();
-      p.translate(center.x, center.y);
+      ctx.translate(center.x, center.y);
 
-      // Dairesel Taş Çeşme Clip Maskesi (p5 v1 & v2 tam uyumlu Canvas 2D clip)
-      const ctx = p.drawingContext;
+      // Dairesel Taş Çeşme Clip Maskesi
       ctx.save();
       ctx.beginPath();
-      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.arc(0, 0, radius, 0, TWO_PI);
       ctx.clip();
 
       // İç sahneyi çapa göre komple ölçekle
-      p.push();
-      p.scale(sceneScale);
+      ctx.scale(sceneScale, sceneScale);
 
-      drawWaterAmbience(BASE_RADIUS, time);
+      drawWaterAmbience(ctx, BASE_RADIUS, nowSec);
 
       for (const f of floatingFibers) {
-        f.update(BASE_RADIUS, time);
-        f.display();
+        f.update(BASE_RADIUS, nowSec);
+        f.display(ctx);
       }
 
       for (let i = ripples.length - 1; i >= 0; i--) {
         ripples[i].update();
-        ripples[i].display();
+        ripples[i].display(ctx);
         if (ripples[i].isDead()) ripples.splice(i, 1);
       }
 
       if (organism) {
-        organism.update(time);
-        organism.display(time);
+        organism.update(dt);
+        organism.display(ctx, nowSec);
         if (organism.isCompletelyDissolved()) organism = null;
       } else {
-        drawIdleFountainCore(time);
+        drawIdleFountainCore(ctx, nowSec);
       }
 
-      p.pop();
       ctx.restore();
 
       // Taş Çeşme Sınır Çemberi
       if (cfg.showBasinRing) {
-        p.noFill();
-        p.stroke(90, 85, 72, 95);
-        p.strokeWeight(1.5);
-        p.circle(0, 0, radius * 2);
+        ctx.strokeStyle = rgba(90, 85, 72, 95);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, TWO_PI);
+        ctx.stroke();
 
-        p.stroke(180, 170, 145, 30);
-        p.strokeWeight(1);
-        p.circle(0, 0, radius * 1.97);
+        ctx.strokeStyle = rgba(180, 170, 145, 30);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.985, 0, TWO_PI);
+        ctx.stroke();
       }
 
-      p.pop();
+      ctx.restore();
     };
   }
 }
