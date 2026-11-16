@@ -117,7 +117,9 @@ class ThymeFlows {
 
             let angleOffset = (i * PI + HALF_PI);
             angleOffset    += (((((i + 1) % 2) * 2) - 1) * (curv - dir));
-            angleOffset    += p.randomGaussian(0, orderliness); // Gaussian varyasyon
+            // Uzunlukla aynı mantıkla (mutation + fc tabanlı) noise ile açı varyasyonu
+            let angleNoise  = p.noise(mutation + 8123, fc / 253) - 0.5;
+            angleOffset    += angleNoise * orderliness * PI;
 
             let totalAngle  = currentAngle + angleOffset;
             let newLx       = cos(totalAngle) * newLenMag;
@@ -186,7 +188,9 @@ class ThymeFlows {
 
             let angleOffset = (i * PI + HALF_PI);
             angleOffset    += (((((i + 1) % 2) * 2) - 1) * spread);
-            angleOffset    += p.randomGaussian(0, orderliness); // Gaussian varyasyon
+            // Uzunlukla aynı mantıkla (mutation + fc tabanlı) noise ile açı varyasyonu
+            let angleNoise  = p.noise(mutation + 8123, fc / 253 + this.pots[5] * 2) - 0.5;
+            angleOffset    += angleNoise * orderliness * PI;
 
             let totalAngle  = currentAngle + angleOffset;
             let newLx       = cos(totalAngle) * newLenMag;

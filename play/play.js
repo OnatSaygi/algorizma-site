@@ -102,6 +102,9 @@ function initUI() {
         if (embedSelect.value === 'ThymeFlows')     currentSketch = new ThymeFlows();
         else if (embedSelect.value === 'LivingNet') currentSketch = new LivingNet();
         else if (embedSelect.value === 'Mandala')   currentSketch = new Mandala();
+        else if (embedSelect.value === 'RichieMoire') currentSketch = new RichieMoire();
+        else if (embedSelect.value === 'dvd')       currentSketch = new dvd();
+        else if (embedSelect.value === 'GorunmezBaglar') currentSketch = new GorunmezBaglar();
         wireDataCallbacks();
     }
 
@@ -121,7 +124,8 @@ function initUI() {
             // only push to the sketch if this source is currently selected
             if (source === activeSource && currentSketch && Array.isArray(arr)) {
                 arr.forEach((v, i) => {
-                    if (i < currentSketch.pots.length) currentSketch.pots[i] = v / 1023;
+                    if (i < currentSketch.pots.length)
+                        currentSketch.pots[i] = currentSketch.rawPots ? v : v / 1023;
                 });
             }
         };
@@ -167,6 +171,9 @@ function initUI() {
         if      (name === 'ThymeFlows')     currentSketch = new ThymeFlows();
         else if (name === 'LivingNet') currentSketch = new LivingNet();
         else if (name === 'Mandala')   currentSketch = new Mandala();
+        else if (name === 'RichieMoire') currentSketch = new RichieMoire();
+        else if (name === 'dvd')       currentSketch = new dvd();
+        else if (name === 'GorunmezBaglar') currentSketch = new GorunmezBaglar();
         wireDataCallbacks();
         updateUI();
     });
