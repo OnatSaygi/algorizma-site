@@ -544,8 +544,8 @@ class GorunmezBaglar {
           const currentPlant = PLANT_TYPES[seq[seqIdx]] || PLANT_TYPES.moss;
           const prevPlant = PLANT_TYPES[seq[prevSeqIdx]] || currentPlant;
 
-          // Bu dalın kaç adım yürüyeceği ve adım uzunluğu
-          const stepCount = currentPlant.id === 'monkey_tail' ? 18 : currentPlant.id === 'palm' ? 15 : 12;
+          // Bu dalın kaç adım yürüyeceği ve adım uzunluğu (3317U/GT630M için optimize)
+          const stepCount = currentPlant.id === 'monkey_tail' ? 13 : currentPlant.id === 'palm' ? 11 : 9;
           const baseStepLen = (this.maxRadius / (tip.maxDepth * 11 + 8)) * tip.energy *
             (currentPlant.id === 'monkey_tail' ? 1.35 : currentPlant.id === 'moss' ? 0.82 : 1.05);
 
@@ -614,9 +614,9 @@ class GorunmezBaglar {
           }
 
           // Jüt İplik Demetleri (önceki bitki ile şimdiki bitkinin renklerini melezler!)
-          const strandCount = currentPlant.id === 'monkey_tail' ? 10
-            : currentPlant.id === 'palm' ? 8
-            : currentPlant.id === 'moss' ? 7 : 5;
+          const strandCount = currentPlant.id === 'monkey_tail' ? 6
+            : currentPlant.id === 'palm' ? 5
+            : currentPlant.id === 'moss' ? 5 : 4;
           const strands = [];
           for (let s = 0; s < strandCount; s++) {
             strands.push({
@@ -926,31 +926,44 @@ class GorunmezBaglar {
         const pts = br.points;
         const activeCount = Math.max(2, Math.floor(pts.length * growth));
 
-        // Dinamik Peristaltik / Su Akıntısı Deformasyonu
-        // Küstüm otu + Maymun kuyruğu kombinasyonunda gövde yılan/kalp gibi dalgalanır
+        // Dinamik Peristaltik / Su Akıntısı Deformasyonu (GC-free buffer)
         const waveAmp = (2.5 + g.peristalticWave * 5.5) * (1 + br.depth * 0.25);
         const waveFreq = 2.2 + g.spiralBias * 1.5;
 
-        const deformed = [];
+        if (!this._defBuf || this._defBuf.length < activeCount) {
+          const cap = Math.max(32, activeCount);
+          this._defBuf = {
+            length: cap,
+            x: new Float32Array(cap),
+            y: new Float32Array(cap),
+            cosP: new Float32Array(cap),
+            sinP: new Float32Array(cap),
+            angle: new Float32Array(cap),
+            tNorm: new Float32Array(cap)
+          };
+        }
+        const buf = this._defBuf;
         for (let i = 0; i < activeCount; i++) {
           const pt = pts[i];
           const perp = pt.angle + HALF_PI;
+          const cp = Math.cos(perp);
+          const sp = Math.sin(perp);
           const wave = Math.sin(time * 2.2 - pt.tNorm * waveFreq + br.phaseSeed) * waveAmp * pt.tNorm;
-          deformed.push({
-            x: pt.x + Math.cos(perp) * wave,
-            y: pt.y + Math.sin(perp) * wave,
-            angle: pt.angle,
-            tNorm: pt.tNorm
-          });
+          buf.x[i] = pt.x + cp * wave;
+          buf.y[i] = pt.y + sp * wave;
+          buf.cosP[i] = cp;
+          buf.sinP[i] = sp;
+          buf.angle[i] = pt.angle;
+          buf.tNorm[i] = pt.tNorm;
         }
 
         // A) İç Çelik Tel Omurga
         ctx.strokeStyle = rgba(colGlow[0], colGlow[1], colGlow[2], 125 * masterAlpha);
         ctx.lineWidth = Math.max(0.65, (br.maxDepth - br.depth + 1) * 0.45);
         ctx.beginPath();
-        for (let i = 0; i < deformed.length; i++) {
-          if (i === 0) ctx.moveTo(deformed[i].x, deformed[i].y);
-          else ctx.lineTo(deformed[i].x, deformed[i].y);
+        for (let i = 0; i < activeCount; i++) {
+          if (i === 0) ctx.moveTo(buf.x[i], buf.y[i]);
+          else ctx.lineTo(buf.x[i], buf.y[i]);
         }
         ctx.stroke();
 
@@ -958,6 +971,8 @@ class GorunmezBaglar {
         const baseSpread = br.plant.id === 'monkey_tail' ? 8.5
           : br.plant.id === 'moss' ? 9.5
           : br.plant.id === 'palm' ? 6.0 : 4.2;
+        const depthScale = 1 - br.depth * 0.14;
+        const spiralFreq = PI * (3 + g.spiralBias * 2);
 
         for (const st of br.strands) {
           const cSource = st.usePrevColor ? prevCol : colPri;
@@ -971,16 +986,14 @@ class GorunmezBaglar {
           ctx.lineWidth = st.weight * map(br.depth, 0, br.maxDepth, 1.25, 0.6);
 
           ctx.beginPath();
-          for (let i = 0; i < deformed.length; i++) {
-            const dp = deformed[i];
-            const perp = dp.angle + HALF_PI;
-            // Peristaltik nabızla genişleyip daralan lif zarfı
-            const pulseEnv = 1 + g.peristalticWave * 0.25 * Math.sin(time * 3.2 - dp.tNorm * 4 + br.phaseSeed);
-            const twist = Math.sin(dp.tNorm * PI * (3 + g.spiralBias * 2) + st.phase + time * 0.9);
-            const env = Math.sin(dp.tNorm * PI) * baseSpread * pulseEnv * (1 - br.depth * 0.14);
+          for (let i = 0; i < activeCount; i++) {
+            const tn = buf.tNorm[i];
+            const pulseEnv = 1 + g.peristalticWave * 0.25 * Math.sin(time * 3.2 - tn * 4 + br.phaseSeed);
+            const twist = Math.sin(tn * spiralFreq + st.phase + time * 0.9);
+            const env = Math.sin(tn * PI) * baseSpread * pulseEnv * depthScale;
             const off = st.spreadRatio * env * twist;
-            const sx = dp.x + Math.cos(perp) * off;
-            const sy = dp.y + Math.sin(perp) * off;
+            const sx = buf.x[i] + buf.cosP[i] * off;
+            const sy = buf.y[i] + buf.sinP[i] * off;
             if (i === 0) ctx.moveTo(sx, sy);
             else ctx.lineTo(sx, sy);
           }
@@ -990,11 +1003,11 @@ class GorunmezBaglar {
         // C) Melezlenmiş Botanik Organlar (Okutulma Sırasındaki Geçişlere Göre Şekillenir)
         if (!this.isGhost && growth > 0.2) {
           const organAlpha = map(growth, 0.2, 1, 0, 1) * masterAlpha;
-          this.drawHybridOrgans(ctx, br, deformed, time, organAlpha);
+          this.drawHybridOrgans(ctx, br, buf, activeCount, time, organAlpha);
         }
       }
 
-      drawHybridOrgans(ctx, br, deformed, time, alpha) {
+      drawHybridOrgans(ctx, br, buf, activeCount, time, alpha) {
         const g = this.genome;
         const id = br.plant.id;
         const prevId = br.prevPlant.id;
@@ -1003,125 +1016,143 @@ class GorunmezBaglar {
         const colGlow = br.plant.colorGlow;
 
         if (id === 'mimosa') {
-          // KÜSTÜM OTU:
-          // Eğer öncesinde Maymun Kuyruğu varsa yaprakçıklar kıvrımlı/tüysü olur;
-          // Eğer öncesinde Palmiye varsa yaprakçıklar çok uzun yelpaze tüyü gibi açılır!
           const foldWave = Math.sin(time * (2.4 + g.peristalticWave * 0.8) - br.depth * 1.2 + br.phaseSeed);
           const foldRatio = constrain(map(foldWave, 0.05, 0.92, 0, 1), 0, 1);
           const lenMult = prevId === 'palm' ? 1.55 : prevId === 'monkey_tail' ? 1.25 : 1.0;
+          const openAngle = lerp(PI * 0.44, PI * 0.06, foldRatio);
+          const isCurved = prevId === 'monkey_tail';
 
-          for (let i = 2; i < deformed.length - 1; i += 2) {
-            const dp = deformed[i];
-            const leafletLen = map(i, 0, deformed.length, 19, 8) * lenMult * (1 - br.depth * 0.1);
-            const openAngle = lerp(PI * 0.44, PI * 0.06, foldRatio);
+          // Yaprakçık sapları (tek batched path)
+          ctx.strokeStyle = rgba(colPri[0], colPri[1], colPri[2], 195 * alpha);
+          ctx.lineWidth = 1.05;
+          ctx.beginPath();
+          const tipPts = [];
+          for (let i = 2; i < activeCount - 1; i += 2) {
+            const dx = buf.x[i];
+            const dy = buf.y[i];
+            const da = buf.angle[i];
+            const leafletLen = map(i, 0, activeCount, 19, 8) * lenMult * (1 - br.depth * 0.1);
 
             for (const side of [-1, 1]) {
-              const la = dp.angle + side * openAngle;
-              const lx = dp.x + Math.cos(la) * leafletLen;
-              const ly = dp.y + Math.sin(la) * leafletLen;
-
-              ctx.strokeStyle = rgba(colPri[0], colPri[1], colPri[2], 195 * alpha);
-              ctx.lineWidth = 1.05;
-              ctx.beginPath();
-              ctx.moveTo(dp.x, dp.y);
-              if (prevId === 'monkey_tail') {
-                // Sarmal kavisli mimoza tüyü
-                const cx = (dp.x + lx) * 0.5 + Math.cos(la + side * 0.5) * 6;
-                const cy = (dp.y + ly) * 0.5 + Math.sin(la + side * 0.5) * 6;
+              const la = da + side * openAngle;
+              const lx = dx + Math.cos(la) * leafletLen;
+              const ly = dy + Math.sin(la) * leafletLen;
+              ctx.moveTo(dx, dy);
+              if (isCurved) {
+                const cx = (dx + lx) * 0.5 + Math.cos(la + side * 0.5) * 6;
+                const cy = (dy + ly) * 0.5 + Math.sin(la + side * 0.5) * 6;
                 ctx.quadraticCurveTo(cx, cy, lx, ly);
               } else {
                 ctx.lineTo(lx, ly);
               }
-              ctx.stroke();
-
-              ctx.fillStyle = rgba(colGlow[0], colGlow[1], colGlow[2], (140 + 95 * foldRatio) * alpha);
-              ctx.beginPath();
-              ctx.arc(lx, ly, 1.4, 0, TWO_PI);
-              ctx.fill();
+              tipPts.push(lx, ly);
             }
           }
+          ctx.stroke();
+
+          // Yaprakçık uçları (tek batched path)
+          if (tipPts.length > 0) {
+            ctx.fillStyle = rgba(colGlow[0], colGlow[1], colGlow[2], (140 + 95 * foldRatio) * alpha);
+            ctx.beginPath();
+            for (let k = 0; k < tipPts.length; k += 2) {
+              const lx = tipPts[k];
+              const ly = tipPts[k + 1];
+              ctx.moveTo(lx + 1.4, ly);
+              ctx.arc(lx, ly, 1.4, 0, TWO_PI);
+            }
+            ctx.fill();
+          }
         } else if (id === 'palm') {
-          // PALMİYE:
-          // Eğer öncesinde Maymun Kuyruğu varsa sadece dış sırtta tek yönlü kanat (asimetrik yüzgeç) açar!
-          // Eğer öncesinde Küstüm Otu varsa palmiye şeritleri nefes alır gibi kapanıp açılır!
           const oneSided = prevId === 'monkey_tail' || g.fanAsymmetry > 0.85;
           const breathing = prevId === 'mimosa' ? (0.55 + 0.45 * Math.sin(time * 2.5 + br.phaseSeed)) : 1.0;
 
           ctx.strokeStyle = rgba(colPri[0], colPri[1], colPri[2], 145 * alpha);
           ctx.lineWidth = 0.95;
+          ctx.beginPath();
 
-          for (let i = 2; i < deformed.length; i += 3) {
-            const dp = deformed[i];
-            const baseLen = map(i, 0, deformed.length, 34, 15) * (1 + g.fanAsymmetry * 0.15);
+          for (let i = 2; i < activeCount; i += 3) {
+            const dx = buf.x[i];
+            const dy = buf.y[i];
+            const da = buf.angle[i];
+            const baseLen = map(i, 0, activeCount, 34, 15) * (1 + g.fanAsymmetry * 0.15);
 
             const startF = oneSided ? 1 : -3;
             const endF = 3;
             for (let f = startF; f <= endF; f++) {
               if (f === 0) continue;
               const side = oneSided ? br.chirality * f : f;
-              const spreadA = dp.angle + side * 0.23 * breathing + Math.sin(time * 1.3 + i) * 0.06;
-              const fx = dp.x + Math.cos(spreadA) * baseLen;
-              const fy = dp.y + Math.sin(spreadA) * baseLen;
-              const cpx = dp.x + Math.cos(spreadA - side * 0.12) * (baseLen * 0.58);
-              const cpy = dp.y + Math.sin(spreadA - side * 0.12) * (baseLen * 0.58);
+              const spreadA = da + side * 0.23 * breathing + Math.sin(time * 1.3 + i) * 0.06;
+              const fx = dx + Math.cos(spreadA) * baseLen;
+              const fy = dy + Math.sin(spreadA) * baseLen;
+              const cpx = dx + Math.cos(spreadA - side * 0.12) * (baseLen * 0.58);
+              const cpy = dy + Math.sin(spreadA - side * 0.12) * (baseLen * 0.58);
 
-              ctx.beginPath();
-              ctx.moveTo(dp.x, dp.y);
+              ctx.moveTo(dx, dy);
               ctx.quadraticCurveTo(cpx, cpy, fx, fy);
-              ctx.stroke();
             }
           }
+          ctx.stroke();
         } else if (id === 'monkey_tail') {
-          // MAYMUN KUYRUĞU:
-          // Eğer öncesinde Palmiye varsa tüyler çok uzun sarkık dokunaçlara (weeping tendrils) dönüşür!
           ctx.strokeStyle = rgba(colPri[0], colPri[1], colPri[2], 155 * alpha);
           ctx.lineWidth = 0.85;
           const lenBoost = 1 + g.weepingTendrils * 0.65;
+          ctx.beginPath();
 
-          for (let i = 1; i < deformed.length; i++) {
-            const dp = deformed[i];
+          for (let i = 1; i < activeCount; i++) {
+            const dx = buf.x[i];
+            const dy = buf.y[i];
+            const da = buf.angle[i];
+            const tn = buf.tNorm[i];
             for (let h = 0; h < 4; h++) {
               const side = h % 2 === 0 ? 1 : -1;
               const hairPhase = i * 0.7 + h * 1.9 + br.phaseSeed;
-              const hairLen = (15 + Math.sin(hairPhase) * 8) * lenBoost * (1 - dp.tNorm * 0.25);
-              const hairAngle = dp.angle + side * (HALF_PI * 0.62) + Math.sin(time * 2.0 + hairPhase) * 0.32;
+              const hairLen = (15 + Math.sin(hairPhase) * 8) * lenBoost * (1 - tn * 0.25);
+              const hairAngle = da + side * (HALF_PI * 0.62) + Math.sin(time * 2.0 + hairPhase) * 0.32;
 
-              const hx = dp.x + Math.cos(hairAngle) * hairLen;
-              const hy = dp.y + Math.sin(hairAngle) * hairLen;
-              const cx = dp.x + Math.cos(hairAngle + side * 0.38) * (hairLen * 0.55);
-              const cy = dp.y + Math.sin(hairAngle + side * 0.38) * (hairLen * 0.55);
+              const hx = dx + Math.cos(hairAngle) * hairLen;
+              const hy = dy + Math.sin(hairAngle) * hairLen;
+              const cx = dx + Math.cos(hairAngle + side * 0.38) * (hairLen * 0.55);
+              const cy = dy + Math.sin(hairAngle + side * 0.38) * (hairLen * 0.55);
 
-              ctx.beginPath();
-              ctx.moveTo(dp.x, dp.y);
+              ctx.moveTo(dx, dy);
               ctx.quadraticCurveTo(cx, cy, hx, hy);
-              ctx.stroke();
             }
           }
+          ctx.stroke();
         } else if (id === 'moss') {
-          // YOSUN:
-          // Boğumlardan yayılan mikro-fraktal koza ağları ve spor bulutları
-          for (let i = 2; i < deformed.length; i += 2) {
-            const dp = deformed[i];
+          ctx.strokeStyle = rgba(colSec[0], colSec[1], colSec[2], 130 * alpha);
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          const sporePts = [];
+
+          for (let i = 2; i < activeCount; i += 2) {
+            const dx = buf.x[i];
+            const dy = buf.y[i];
             const clusterRadius = (10 + 5 * Math.sin(i * 1.3 + br.phaseSeed)) * (1 + g.anastomosisRate * 0.2);
 
             for (let m = 0; m < 5; m++) {
               const a = (TWO_PI / 5) * m + i + time * 0.45;
               const r = clusterRadius * (0.6 + 0.4 * Math.sin(time * 2.1 + m));
-              const mx = dp.x + Math.cos(a) * r;
-              const my = dp.y + Math.sin(a) * r;
+              const mx = dx + Math.cos(a) * r;
+              const my = dy + Math.sin(a) * r;
 
-              ctx.strokeStyle = rgba(colSec[0], colSec[1], colSec[2], 130 * alpha);
-              ctx.lineWidth = 0.8;
-              ctx.beginPath();
-              ctx.moveTo(dp.x, dp.y);
+              ctx.moveTo(dx, dy);
               ctx.lineTo(mx, my);
-              ctx.stroke();
-
-              ctx.fillStyle = rgba(colGlow[0], colGlow[1], colGlow[2], 175 * alpha);
-              ctx.beginPath();
-              ctx.arc(mx, my, 1.25, 0, TWO_PI);
-              ctx.fill();
+              sporePts.push(mx, my);
             }
+          }
+          ctx.stroke();
+
+          if (sporePts.length > 0) {
+            ctx.fillStyle = rgba(colGlow[0], colGlow[1], colGlow[2], 175 * alpha);
+            ctx.beginPath();
+            for (let k = 0; k < sporePts.length; k += 2) {
+              const mx = sporePts[k];
+              const my = sporePts[k + 1];
+              ctx.moveTo(mx + 1.25, my);
+              ctx.arc(mx, my, 1.25, 0, TWO_PI);
+            }
+            ctx.fill();
           }
         }
       }
@@ -1400,7 +1431,7 @@ class GorunmezBaglar {
       style.textContent = `
         #gb-simulator-panel {
           position: fixed; top: 16px; left: 16px; bottom: 16px; width: 340px; z-index: 9990;
-          background: rgba(14, 15, 13, 0.88); backdrop-filter: blur(14px);
+          background: rgba(14, 15, 13, 0.94);
           border: 1px solid rgba(212, 194, 154, 0.18); border-radius: 14px; padding: 16px;
           display: flex; flex-direction: column; gap: 11px; overflow-y: auto;
           color: #e6dfd3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -1672,7 +1703,7 @@ class GorunmezBaglar {
 
     // ── p5 Lifecycle ────────────────────────────────────────────────────────
     p.setup = () => {
-      p.frameRate(60);
+      p.frameRate(35);
       p.pixelDensity(1);
       p.createCanvas(p.windowWidth, p.windowHeight);
       Object.assign(p.canvas.style, {
@@ -1680,7 +1711,7 @@ class GorunmezBaglar {
       });
       p.canvas.classList.add('p5-background');
 
-      for (let i = 0; i < 65; i++) {
+      for (let i = 0; i < 32; i++) {
         floatingFibers.push(new FloatingFiber());
       }
 
@@ -1752,10 +1783,18 @@ class GorunmezBaglar {
 
       drawWaterAmbience(ctx, BASE_RADIUS, nowSec);
 
+      ctx.strokeStyle = 'rgba(215,200,165,0.24)';
+      ctx.lineWidth = 0.85;
+      ctx.beginPath();
       for (const f of floatingFibers) {
         f.update(BASE_RADIUS, nowSec);
-        f.display(ctx);
+        const halfL = f.len * 0.5;
+        const dx = Math.cos(f.orient) * halfL;
+        const dy = Math.sin(f.orient) * halfL;
+        ctx.moveTo(f.x - dx, f.y - dy);
+        ctx.lineTo(f.x + dx, f.y + dy);
       }
+      ctx.stroke();
 
       // Önceki ziyaretçiden kalan silik rizom hafızası (suyun dibinde)
       if (ghostOrganism) {
