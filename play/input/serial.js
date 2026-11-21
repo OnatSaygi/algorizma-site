@@ -12,6 +12,7 @@ let _serialPort = null;
 let _reader = null;
 let _isOpen = false;
 let _onData = (data) => { console.log('Serial data:', data); };
+let _onRawLine = () => {};
 
 async function autoConnect() {
   if (!('serial' in navigator)) return false;
@@ -61,7 +62,7 @@ async function connectSerial() {
     await disconnectSerial();
   }
   try {
-    _serialPort = await navigator.serial.requestPort({ filters: [{ usbVendorId: TARGET_VID, usbProductId: TARGET_PID }] });
+    _serialPort = await navigator.serial.requestPort();
     await _serialPort.open({ baudRate: 115200 });
     _isOpen = true;
     readLoop();
@@ -94,6 +95,10 @@ function isConnected() {
 
 function setSerialDataCallback(cb) {
   _onData = cb || (() => {});
+}
+
+function setSerialRawLineCallback(cb) {
+  _onRawLine = cb || (() => {});
 }
 
 // Arduino: "A0,A1,A2,A3,A4,A5,A6,A7,reset"
@@ -133,7 +138,7 @@ async function readLoop() {
             if (parsed) {
               _onData(parsed.analog);
             } else {
-              console.warn('Serial: geçersiz satır atlandı:', trimmed);
+              _onRawLine(trimmed);
             }
           }
         }
@@ -167,6 +172,7 @@ window.SerialControl = {
   disconnectSerial,
   sendSerial,
   setSerialDataCallback,
+  setSerialRawLineCallback,
   isConnected,
   autoConnect,
 };

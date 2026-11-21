@@ -95,8 +95,10 @@ function initUI() {
     connSelect.addEventListener('change', () => { activeSource = connSelect.value; updateUI(); });
 
     const embedSelect = uiDiv.querySelector('#embed-select');
-    // ensure Mandala is the default selected sketch
-    embedSelect.value = 'Mandala';
+    const urlSketch = new URLSearchParams(window.location.search).get('sketch') || window.location.hash.replace(/^#/, '');
+    const validSketches = ['Mandala', 'LivingNet', 'ThymeFlows', 'RichieMoire', 'dvd', 'GorunmezBaglar'];
+    // URL parametresi varsa onu, yoksa varsayılan olarak Mandala'yı seç
+    embedSelect.value = validSketches.includes(urlSketch) ? urlSketch : 'Mandala';
     // auto-load the default selected sketch immediately
     if (!currentSketch) {
         if (embedSelect.value === 'ThymeFlows')     currentSketch = new ThymeFlows();
@@ -130,7 +132,16 @@ function initUI() {
             }
         };
         if (window.BluetoothControl) window.BluetoothControl.setBluetoothDataCallback(makeHandler('bluetooth'));
-        if (window.SerialControl)    window.SerialControl.setSerialDataCallback(makeHandler('serial'));
+        if (window.SerialControl) {
+            window.SerialControl.setSerialDataCallback(makeHandler('serial'));
+            if (typeof window.SerialControl.setSerialRawLineCallback === 'function') {
+                window.SerialControl.setSerialRawLineCallback((line) => {
+                    if (currentSketch && typeof currentSketch.handleSerialLine === 'function') {
+                        currentSketch.handleSerialLine(line);
+                    }
+                });
+            }
+        }
         if (window.AutonomousControl && typeof window.AutonomousControl.setAutonomousDataCallback === 'function') {
             window.AutonomousControl.setAutonomousDataCallback(makeHandler('autonomous'));
         }
@@ -198,54 +209,35 @@ function initUI() {
         activeSourceEl.textContent = activeSource || '-';
     }
 
-    // input listeners
-    const hideUntilClickCheckbox = uiDiv.querySelector('#hide-until-click');
-    hideUntilClickCheckbox.addEventListener('change', () => {
-        if (hideUntilClickCheckbox.checked) {
-            lastInputTime = 0;
-            hideUI();
+    // UI visibility toggle via 'Q' hotkey (and double-tap on touch devices)
+    let uiVisible = false;
+    hideUI();
+
+    const toggleUI = () => {
+        uiVisible = !uiVisible;
+        if (uiVisible) showUI();
+        else hideUI();
+    };
+
+    window.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
+        if (e.key === 'q' || e.key === 'Q') {
+            toggleUI();
         }
     });
 
     // double-tap detection for mobile
     let lastTapTime = 0;
     const DOUBLE_TAP_MS = 320;
-
-    const onMouseDown = () => {
-        lastInputTime = Date.now();
-        showUI();
-    };
-    const touchOrMouse = () => {
-        if (hideUntilClickCheckbox.checked) return;
-        lastInputTime = Date.now();
-        showUI();
-    };
-    const onTouchEnd = (e) => {
-        if (hideUntilClickCheckbox.checked) {
-            // require double-tap to show when checkbox is on
-            const now = Date.now();
-            if (now - lastTapTime < DOUBLE_TAP_MS) {
-                lastInputTime = now;
-                showUI();
-                lastTapTime = 0;
-            } else {
-                lastTapTime = now;
-            }
+    window.addEventListener('touchend', () => {
+        const now = Date.now();
+        if (now - lastTapTime < DOUBLE_TAP_MS) {
+            toggleUI();
+            lastTapTime = 0;
         } else {
-            lastInputTime = Date.now();
-            showUI();
+            lastTapTime = now;
         }
-    };
-    window.addEventListener('mousemove', touchOrMouse, { passive: true });
-    window.addEventListener('mousedown', onMouseDown, { passive: true });
-    window.addEventListener('keydown', touchOrMouse, { passive: true });
-    window.addEventListener('touchend', onTouchEnd, { passive: true });
-
-    // periodically check visibility
-    setInterval(() => {
-        if (Date.now() - lastInputTime > VISIBLE_MS) hideUI();
-        else showUI();
-    }, 200);
+    }, { passive: true });
 }
 
 function showUI() {

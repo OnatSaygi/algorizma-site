@@ -17,6 +17,12 @@ class GorunmezBaglar {
 
     this._uiElements = [];
     this._keyHandler = null;
+    this._ws = null;
+    this._wsRetryTimer = null;
+    this._serialPort = null;
+    this._serialReader = null;
+    this._destroyed = false;
+    this.handleSerialLine = null;
 
     this._p5 = new p5(p => this._sketch(p));
 
@@ -30,6 +36,23 @@ class GorunmezBaglar {
   }
 
   _cleanup() {
+    this._destroyed = true;
+    if (this._wsRetryTimer) {
+      clearTimeout(this._wsRetryTimer);
+      this._wsRetryTimer = null;
+    }
+    if (this._ws) {
+      try { this._ws.close(); } catch (_) {}
+      this._ws = null;
+    }
+    if (this._serialReader) {
+      try { this._serialReader.cancel(); } catch (_) {}
+      this._serialReader = null;
+    }
+    if (this._serialPort) {
+      try { this._serialPort.close(); } catch (_) {}
+      this._serialPort = null;
+    }
     if (this._keyHandler) {
       window.removeEventListener('keydown', this._keyHandler);
       this._keyHandler = null;
@@ -1180,6 +1203,169 @@ class GorunmezBaglar {
       updateSimulatorUI();
     };
 
+    // ── Gerçek Donanım (ESP32 + RC522) WebSerial & WebSocket Köprüsü ─────────
+    const hardwareLastSeen = new Map();
+    const setHardwareStatus = (text, color = '#a2d4a8') => {
+      const el = document.getElementById('gb-serial-status');
+      if (el) {
+        el.textContent = text;
+        el.style.color = color;
+      }
+    };
+
+    const getOrCreateSeedByUid = (uid) => {
+      const cleanUid = String(uid || '').trim().toUpperCase();
+      if (!cleanUid || cleanUid === 'NONE') return null;
+      let idx = rfidState.seeds.findIndex(s => s.id === cleanUid);
+      if (idx === -1) {
+        const shortUid = cleanUid.replace(/\s+/g, '').slice(-4);
+        rfidState.seeds.push({
+          id: cleanUid,
+          label: `Tohum ${shortUid}`,
+          history: [],
+          placed: false
+        });
+        idx = rfidState.seeds.length - 1;
+      }
+      rfidState.activeSeedIndex = idx;
+      return rfidState.seeds[idx];
+    };
+
+    const KAIDE_TO_PLANT = {
+      1: 'mimosa',
+      2: 'palm',
+      3: 'monkey_tail',
+      4: 'moss'
+    };
+
+    const handleHardwareLine = (rawLine) => {
+      const line = String(rawLine || '').trim();
+      if (!line) return;
+
+      let action = '';
+      let station = '';
+      let uid = 'DEFAULT';
+
+      if (line.startsWith('{')) {
+        try {
+          const obj = JSON.parse(line);
+          action = String(obj.event || obj.type || '').toUpperCase();
+          station = String(obj.plant || obj.station || '').toLowerCase();
+          uid = String(obj.uid || obj.tag || 'DEFAULT');
+        } catch (_) {
+          return;
+        }
+      } else if (/^KAIDE:\s*\d+/i.test(line)) {
+        // Master/Slave ESP32 formatı: "KAIDE: 0 | DURUM: KART_OKUNDU | UID: A1 B2 C3 D4"
+        const kaideMatch = line.match(/KAIDE:\s*(\d+)/i);
+        const durumMatch = line.match(/DURUM:\s*([A-Z_]+)/i);
+        const uidMatch = line.match(/UID:\s*(.+)$/i);
+        if (!kaideMatch || !durumMatch) return;
+
+        const kaideId = parseInt(kaideMatch[1], 10);
+        const durum = durumMatch[1].toUpperCase();
+        uid = uidMatch ? uidMatch[1].trim() : 'NONE';
+
+        if (durum !== 'KART_OKUNDU') return;
+        if (!uid || uid.toUpperCase() === 'NONE') return;
+
+        if (kaideId === 0) {
+          action = 'FOUNTAIN';
+        } else {
+          const mappedPlant = KAIDE_TO_PLANT[kaideId];
+          if (!mappedPlant) return;
+          action = 'TAP';
+          station = mappedPlant;
+        }
+      } else {
+        const parts = line.split(':').map(s => s.trim());
+        action = (parts[0] || '').toUpperCase();
+        if (action === 'TAP') {
+          station = (parts[1] || '').toLowerCase();
+          uid = parts[2] || 'DEFAULT';
+        } else if (action === 'FOUNTAIN') {
+          uid = parts[1] || 'DEFAULT';
+        } else {
+          return;
+        }
+      }
+
+      const now = Date.now();
+      const dedupKey = `${action}:${station}:${uid}`;
+      const lastTs = hardwareLastSeen.get(dedupKey) || 0;
+      if (now - lastTs < 1800) return;
+      hardwareLastSeen.set(dedupKey, now);
+
+      if (action === 'TAP' && PLANT_TYPES[station]) {
+        const seed = getOrCreateSeedByUid(uid);
+        if (!seed) return;
+        tapPlantStation(station);
+      } else if (action === 'FOUNTAIN') {
+        const seed = getOrCreateSeedByUid(uid);
+        if (!seed) return;
+        // Çeşme (ID 0 Master) ile etkileşim: animasyonu oynat ve tohumun belleğini sıfırla
+        placeInFountain();
+        seed.history = [];
+        seed.placed = false;
+        updateSimulatorUI();
+      }
+    };
+
+    this.handleSerialLine = handleHardwareLine;
+
+    const connectWebSerial = async () => {
+      if (!('serial' in navigator)) {
+        setHardwareStatus('Tarayıcı desteklemiyor (Chrome kullanın)', '#e0768e');
+        return;
+      }
+      try {
+        const port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        this._serialPort = port;
+        setHardwareStatus('● USB Bağlı (115200)', '#a2d4a8');
+
+        const decoder = new TextDecoderStream();
+        port.readable.pipeTo(decoder.writable).catch(() => {});
+        const reader = decoder.readable.getReader();
+        this._serialReader = reader;
+
+        let buffer = '';
+        while (!this._destroyed) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            buffer += value;
+            const lines = buffer.split(/\r?\n/);
+            buffer = lines.pop() || '';
+            for (const l of lines) handleHardwareLine(l);
+          }
+        }
+      } catch (err) {
+        if (!this._destroyed) {
+          setHardwareStatus('Bağlantı kesildi / iptal', '#d4c29a');
+        }
+      }
+    };
+
+    const connectWebSocketBridge = () => {
+      if (this._destroyed) return;
+      try {
+        const ws = new WebSocket('ws://localhost:8765');
+        this._ws = ws;
+        ws.onopen = () => setHardwareStatus('● Köprü Bağlı (Otomatik)', '#a2d4a8');
+        ws.onmessage = (ev) => handleHardwareLine(ev.data);
+        ws.onclose = () => {
+          if (this._destroyed) return;
+          this._ws = null;
+          if (!this._serialPort) setHardwareStatus('Bağlı değil', '#857e70');
+          this._wsRetryTimer = setTimeout(connectWebSocketBridge, 4000);
+        };
+        ws.onerror = () => {
+          try { ws.close(); } catch (_) {}
+        };
+      } catch (_) {}
+    };
+
     const randomizeAndPlay = () => {
       const keys = Object.keys(PLANT_TYPES);
       const count = Math.floor(Math.random() * 3) + 2; // 2-4 bitki kombinasyonu
@@ -1272,6 +1458,7 @@ class GorunmezBaglar {
             <button id="gb-btn-random" class="gb-sec-btn"><span>Rastgele</span><kbd>R</kbd></button>
             <button id="gb-btn-clear" class="gb-sec-btn"><span>Sıfırla</span><kbd>C</kbd></button>
           </div>
+          <button id="gb-btn-serial" class="gb-sec-btn" style="width:100%;margin-top:6px;justify-content:space-between;align-items:center"><span>🔌 ESP32 Bağla (USB)</span><span id="gb-serial-status" style="color:#857e70;font-size:9.5px">Bağlı değil</span></button>
         </div>
         <div style="border-top:1px solid rgba(212,194,154,0.12);padding-top:8px;font-size:10px;color:#857e70;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px">
           <span><kbd>H</kbd> Paneli Gizle</span>
@@ -1306,6 +1493,7 @@ class GorunmezBaglar {
       panel.querySelector('#gb-btn-reverse').onclick = () => reverseOrderAndPlay();
       panel.querySelector('#gb-btn-random').onclick = () => randomizeAndPlay();
       panel.querySelector('#gb-btn-clear').onclick = () => clearActiveSeed();
+      panel.querySelector('#gb-btn-serial').onclick = () => connectWebSerial();
 
       updateSimulatorUI();
     };
@@ -1313,6 +1501,17 @@ class GorunmezBaglar {
     const updateSimulatorUI = () => {
       const panel = document.getElementById('gb-simulator-panel');
       if (!panel) return;
+      const seedContainer = panel.querySelector('#gb-seeds');
+      if (seedContainer && seedContainer.children.length !== rfidState.seeds.length) {
+        seedContainer.innerHTML = '';
+        rfidState.seeds.forEach((s, idx) => {
+          const btn = document.createElement('button');
+          btn.className = 'gb-seed-btn';
+          btn.textContent = s.label;
+          btn.onclick = () => selectSeed(idx);
+          seedContainer.appendChild(btn);
+        });
+      }
       const seedBtns = panel.querySelectorAll('.gb-seed-btn');
       seedBtns.forEach((b, idx) => b.classList.toggle('active', idx === rfidState.activeSeedIndex));
 
@@ -1338,7 +1537,7 @@ class GorunmezBaglar {
       }
 
       const st = panel.querySelector('#gb-status');
-      if (rfidState.inFountain && seed.history.length > 0) {
+      if (rfidState.inFountain && (seed.history.length > 0 || (organism && !organism.isDissolving))) {
         st.textContent = '● Taş Çeşmede (Aktif)';
         st.style.color = '#a2d4a8';
       } else if (rfidState.inFountain) {
@@ -1353,9 +1552,8 @@ class GorunmezBaglar {
     const getBasinRadius = () => Math.min(p.width, p.height) * cfg.radiusScale;
 
     const getBasinCenter = () => {
-      const sidebarOffset = cfg.uiVisible && p.width > 900 ? 155 : 0;
       return {
-        x: p.width / 2 + sidebarOffset + cfg.offsetX,
+        x: p.width / 2 + cfg.offsetX,
         y: p.height / 2 + cfg.offsetY
       };
     };
@@ -1380,321 +1578,92 @@ class GorunmezBaglar {
       }
     };
 
+    let guideImg = new Image();
+    let guideImgReady = false;
+    let guideSlices = [];
+    guideImg.onload = () => {
+      const iw = guideImg.naturalWidth;
+      const ih = guideImg.naturalHeight;
+      const sw = iw / 4;
+      const rOuter = Math.min(sw, ih) * 0.48;
+      const rInner = rOuter * 0.52;
+      guideSlices = [];
+      for (let i = 0; i < 4; i++) {
+        const c = document.createElement('canvas');
+        c.width = Math.round(sw);
+        c.height = ih;
+        const g = c.getContext('2d');
+        g.drawImage(guideImg, i * sw, 0, sw, ih, 0, 0, c.width, c.height);
+
+        // Dairesel siyaha/şeffafa yumuşak kenar gradyanı (projeksiyonda flu geçiş)
+        g.globalCompositeOperation = 'destination-in';
+        const grad = g.createRadialGradient(
+          c.width * 0.5, c.height * 0.5, rInner,
+          c.width * 0.5, c.height * 0.5, rOuter
+        );
+        grad.addColorStop(0, 'rgba(0,0,0,1)');
+        grad.addColorStop(0.65, 'rgba(0,0,0,0.65)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, c.width, c.height);
+        guideSlices.push(c);
+      }
+      guideImgReady = true;
+    };
+    guideImg.src = '../cesme2.png';
+
     const drawIdleRitualGuide = (ctx, time, masterAlpha) => {
-      // Yerdeki taş çeşmeye 360° her açıdan bakan ziyaretçiler için
-      // DIAP (diyapozitif slayt) çerçeveli, 90° açılı, saat yönünün tersine dönen 4 adımlı ritüel rehberi
-      const cycle = (time * 0.55) % 4;
-      const stepGlow = (idx) => {
-        const d = Math.abs(cycle - idx);
-        const wrapD = Math.min(d, 4 - d);
-        return 0.45 + 0.55 * Math.max(0, 1 - wrapD * 1.15);
-      };
-
-      const colBase = [228, 214, 184];
-      const colAccent = [252, 238, 205];
-
-      // Sabit duran izleyiciye sağdan 1 -> 2 -> 3 -> 4 şeklinde gelmesi için saat yönünde (+) döner;
-      // kartlar bize yakın olan alt kenarda (saat 6) tam düz hizalıdır.
-      const globalRot = time * 0.16 + Math.sin(time * 0.55) * 0.20;
-      const orbitR = 195;
-      const cardScale = 1.68;
-
-      // DIAP (Slayt/Diyapozitif) Çerçevesi
-      const drawDiapFrame = (w, h, gA) => {
-        ctx.save();
-        ctx.fillStyle = `rgba(12, 14, 12, ${(0.45 * gA).toFixed(3)})`;
-        ctx.strokeStyle = rgba(colBase[0], colBase[1], colBase[2], 95 * gA);
-        ctx.lineWidth = 1.0;
-
-        // Yuvarlatılmış slayt dış çerçevesi
-        const r = 8;
-        const x0 = -w / 2;
-        const y0 = -h / 2;
-        ctx.beginPath();
-        ctx.moveTo(x0 + r, y0);
-        ctx.lineTo(x0 + w - r, y0);
-        ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
-        ctx.lineTo(x0 + w, y0 + h - r);
-        ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
-        ctx.lineTo(x0 + r, y0 + h);
-        ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
-        ctx.lineTo(x0, y0 + r);
-        ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
-        // Köşe kadraj işaretleri (diyapozitif hissi)
-        const m = 4;
-        ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 125 * gA);
-        ctx.beginPath();
-        ctx.moveTo(x0 + m, y0 + m + 5); ctx.lineTo(x0 + m, y0 + m); ctx.lineTo(x0 + m + 5, y0 + m);
-        ctx.moveTo(x0 + w - m - 5, y0 + m); ctx.lineTo(x0 + w - m, y0 + m); ctx.lineTo(x0 + w - m, y0 + m + 5);
-        ctx.moveTo(x0 + m, y0 + h - m - 5); ctx.lineTo(x0 + m, y0 + h - m); ctx.lineTo(x0 + m + 5, y0 + h - m);
-        ctx.moveTo(x0 + w - m - 5, y0 + h - m); ctx.lineTo(x0 + w - m, y0 + h - m); ctx.lineTo(x0 + w - m, y0 + h - m - 5);
-        ctx.stroke();
-        ctx.restore();
-      };
-
-      // Daha belirgin IKEA-stili önkol + el + kavrayan parmaklar
-      const drawHandArm = (hx, hy, angle, gripOpen, gA) => {
-        ctx.save();
-        ctx.translate(hx, hy);
-        ctx.rotate(angle);
-        ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 215 * gA);
-        ctx.lineWidth = 1.65;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        ctx.beginPath();
-        // Önkol
-        ctx.moveTo(-30, -5);
-        ctx.lineTo(-6, -5);
-        // Başparmak (kavrama kavisli)
-        ctx.quadraticCurveTo(1, -13 - gripOpen * 3, 8, -7 - gripOpen * 4);
-        // İşaret parmağı
-        ctx.moveTo(-6, -3);
-        ctx.quadraticCurveTo(4, -5, 11, -1 - gripOpen * 2);
-        // Avuç alt kenarı ve diğer parmaklar
-        ctx.moveTo(-30, 5);
-        ctx.lineTo(-4, 5);
-        ctx.quadraticCurveTo(4, 6, 9, 4 + gripOpen * 3);
-        ctx.stroke();
-        ctx.restore();
-      };
-
-      const drawStepNumber = (nx, ny, num, gA) => {
-        ctx.save();
-        ctx.fillStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 30 * gA);
-        ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 180 * gA);
-        ctx.lineWidth = 1.1;
-        ctx.beginPath();
-        ctx.arc(nx, ny, 10, 0, TWO_PI);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 235 * gA);
-        ctx.font = '700 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(String(num), nx, ny + 0.5);
-        ctx.restore();
-      };
+      if (!guideImgReady || guideSlices.length < 4) return;
+      const sw = guideSlices[0].width;
+      const ih = guideSlices[0].height;
+      const orbitR = 232;
+      const cardW = 205;
+      const cardH = cardW * (ih / sw);
+      const globalRot = -time * 0.14; // Saat yönünün tersine yavaş dönüş
+      const stepAngle = HALF_PI; // 4 kare için 90° aralık
+      const arcGap = 0.52;
 
       ctx.save();
+      ctx.globalAlpha = constrain(masterAlpha, 0, 1);
       ctx.rotate(globalRot);
 
-      // Adımlar arası dairesel oklar (saat 6'daki 1'den sağdaki 2'ye doğru: 1 -> 2 -> ... -> 3 -> 4 -> 1)
-      for (let i = 0; i < 4; i++) {
-        const aStart = HALF_PI - i * HALF_PI - 0.56;
-        const aEnd = HALF_PI - (i + 1) * HALF_PI + 0.56;
-        const aMid = (aStart + aEnd) * 0.5;
+      // 0 -> 1 -> 2 -> 3 arası ark oklar (ilk ve son arası hariç)
+      ctx.save();
+      ctx.strokeStyle = rgba(228, 214, 184, 150 * masterAlpha);
+      ctx.lineWidth = 1.6;
+      for (let i = 0; i < 3; i++) {
+        const aStart = HALF_PI + i * stepAngle + arcGap;
+        const aEnd = HALF_PI + (i + 1) * stepAngle - arcGap;
 
-        ctx.save();
-        ctx.strokeStyle = rgba(colBase[0], colBase[1], colBase[2], 105 * masterAlpha);
-        ctx.lineWidth = 1.6;
+        ctx.setLineDash([6, 7]);
+        ctx.beginPath();
+        ctx.arc(0, 0, orbitR, aStart, aEnd, false);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-        if (i === 1) {
-          // 2 ile 3 arasında belirgin "..." (üç nokta: birden fazla istasyon gezilebilir)
-          ctx.setLineDash([5, 6]);
-          ctx.beginPath();
-          ctx.arc(0, 0, orbitR, aStart, aMid + 0.14, true);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(0, 0, orbitR, aMid - 0.14, aEnd, true);
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          ctx.fillStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 215 * masterAlpha);
-          for (const dA of [-0.075, 0, 0.075]) {
-            const dx = Math.cos(aMid + dA) * orbitR;
-            const dy = Math.sin(aMid + dA) * orbitR;
-            ctx.beginPath();
-            ctx.arc(dx, dy, 3.6, 0, TWO_PI);
-            ctx.fill();
-          }
-        } else {
-          ctx.setLineDash([6, 7]);
-          ctx.beginPath();
-          ctx.arc(0, 0, orbitR, aStart, aEnd, true);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-
-        // Yay ucunda ok başı (anticlockwise teğet yönü: aEnd - HALF_PI)
         const ax = Math.cos(aEnd) * orbitR;
         const ay = Math.sin(aEnd) * orbitR;
-        const tang = aEnd - HALF_PI;
+        const tang = aEnd + HALF_PI;
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(ax - Math.cos(tang - 0.45) * 10, ay - Math.sin(tang - 0.45) * 10);
         ctx.moveTo(ax, ay);
         ctx.lineTo(ax - Math.cos(tang + 0.45) * 10, ay - Math.sin(tang + 0.45) * 10);
         ctx.stroke();
-        ctx.restore();
       }
+      ctx.restore();
 
-      // ── 4 ADIM (Bize yakın alt kenarda tam düz, 1 -> 2 -> 3 -> 4 sağdan gelen sıra) ──
-      for (let stepIdx = 0; stepIdx < 4; stepIdx++) {
-        const angle = -stepIdx * HALF_PI;
-        const gA = masterAlpha * stepGlow(stepIdx);
-
+      // 4 kare görsel (her panel 1 kez, her biri 180° döndürülmüş, dairesel gradyanlı)
+      ctx.globalCompositeOperation = 'screen';
+      for (let i = 0; i < 4; i++) {
         ctx.save();
-        ctx.rotate(angle);
+        ctx.rotate(i * stepAngle);
         ctx.translate(0, orbitR);
-        ctx.scale(cardScale, cardScale);
-
-        drawDiapFrame(100, 90, gA);
-        drawStepNumber(-34, -30, stepIdx + 1, gA);
-
-        if (stepIdx === 0) {
-          // 1: El çeşmeden tohumu belirgin şekilde kavrayıp yukarı alıyor
-          const lift = (Math.sin(time * 2.2) * 0.5 + 0.5) * 10; // 0..10px yukarı çekme hareketi
-          // Çeşme kasesi ve su yüzeyi
-          ctx.strokeStyle = rgba(colBase[0], colBase[1], colBase[2], 165 * gA);
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.arc(4, 20, 22, 0.15, PI - 0.15);
-          ctx.stroke();
-          ctx.strokeStyle = rgba(colBase[0], colBase[1], colBase[2], 70 * gA);
-          ctx.beginPath();
-          ctx.moveTo(-14, 22);
-          ctx.lineTo(22, 22);
-          ctx.stroke();
-
-          // Parmakların kavradığı tohum + yukarı uzanan el-kol
-          drawHandArm(-12, 2 - lift, -0.35, 0.15, gA);
-          ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 225 * gA);
-          ctx.fillStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 95 * gA);
-          ctx.beginPath();
-          ctx.arc(-2, -1 - lift, 6, 0, TWO_PI);
-          ctx.fill();
-          ctx.stroke();
-
-          // Belirgin yukarı çekme oku
-          ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 175 * gA);
-          ctx.lineWidth = 1.3;
-          ctx.beginPath();
-          ctx.moveTo(22, 16);
-          ctx.lineTo(22, -14);
-          ctx.lineTo(17, -8);
-          ctx.moveTo(22, -14);
-          ctx.lineTo(27, -8);
-          ctx.stroke();
-        } else if (stepIdx === 1) {
-          // 2: Bir istasyona (RFID okuyucuya) tohumu okutuyor
-          const tap = (Math.sin(time * 2.6) * 0.5 + 0.5) * 8;
-          // Bitki heykeli
-          ctx.strokeStyle = rgba(162, 212, 168, 190 * gA);
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(22, 28);
-          ctx.quadraticCurveTo(18, 4, 24, -22);
-          ctx.moveTo(21, 8);
-          ctx.quadraticCurveTo(32, 0, 36, -12);
-          ctx.moveTo(21, -2);
-          ctx.quadraticCurveTo(10, -12, 12, -24);
-          ctx.stroke();
-
-          // Heykelin üzerindeki RFID Okuyucu İstasyon Halkası
-          ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 165 * gA);
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.arc(14, 6, 6.5, 0, TWO_PI);
-          ctx.stroke();
-
-          // Okuyucuya yaklaşan el + tohum + RFID dalgaları
-          drawHandArm(-20 + tap, 6, 0, 0.1, gA);
-          ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 220 * gA);
-          ctx.fillStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 80 * gA);
-          ctx.beginPath();
-          ctx.arc(-8 + tap, 6, 5.5, 0, TWO_PI);
-          ctx.fill();
-          ctx.stroke();
-
-          for (let r = 1; r <= 2; r++) {
-            ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 135 * gA);
-            ctx.lineWidth = 1.0;
-            ctx.beginPath();
-            ctx.arc(-2 + tap, 6, 5 + r * 4, -0.75, 0.75);
-            ctx.stroke();
-          }
-        } else if (stepIdx === 2) {
-          // 3: Başka bir bitki heykeliyle etkileşiyor (Palmiye / Sukulent)
-          const tap = (Math.sin(time * 2.4 + 1.0) * 0.5 + 0.5) * 8;
-          // Farklı bitki silüeti (Palmiye yelpazesi)
-          ctx.strokeStyle = rgba(242, 196, 143, 190 * gA);
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.moveTo(22, 28);
-          ctx.lineTo(22, 2);
-          ctx.moveTo(22, 2); ctx.quadraticCurveTo(10, -10, 6, -22);
-          ctx.moveTo(22, 2); ctx.quadraticCurveTo(22, -12, 22, -25);
-          ctx.moveTo(22, 2); ctx.quadraticCurveTo(33, -10, 36, -20);
-          ctx.stroke();
-
-          // Okuyucu istasyonu
-          ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 165 * gA);
-          ctx.beginPath();
-          ctx.arc(14, 10, 6, 0, TWO_PI);
-          ctx.stroke();
-
-          // El + tohum
-          drawHandArm(-20 + tap, 10, 0, 0.1, gA);
-          ctx.fillStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 80 * gA);
-          ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 220 * gA);
-          ctx.beginPath();
-          ctx.arc(-8 + tap, 10, 5.5, 0, TWO_PI);
-          ctx.fill();
-          ctx.stroke();
-
-          // "+" kombinasyon işareti
-          ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 180 * gA);
-          ctx.beginPath();
-          ctx.moveTo(2, -20); ctx.lineTo(2, -10);
-          ctx.moveTo(-3, -15); ctx.lineTo(7, -15);
-          ctx.stroke();
-        } else if (stepIdx === 3) {
-          // 4: Çeşmenin okuyucusuna bırakıp elini geri çekiyor, ağaç filizleniyor
-          const releasePhase = (time * 0.9) % 1;
-          const handPull = releasePhase * 8;
-
-          // Çeşme kasesi
-          ctx.strokeStyle = rgba(colBase[0], colBase[1], colBase[2], 165 * gA);
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.arc(4, 18, 22, 0.15, PI - 0.15);
-          ctx.stroke();
-
-          // Çeşmenin ortasındaki okuyucu yuvası (çift halka)
-          ctx.strokeStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 160 * gA);
-          ctx.lineWidth = 1.1;
-          ctx.beginPath();
-          ctx.arc(4, 20, 7.5, 0, TWO_PI);
-          ctx.stroke();
-
-          // Bırakıp geri çekilen açık el
-          drawHandArm(-16 - handPull, -12 - handPull * 0.5, 0.45, 0.85, gA * (1 - releasePhase * 0.35));
-
-          // Okuyucu yuvasına oturmuş tohum ve filizlenen Hayat Ağacı
-          const bloom = 0.78 + 0.22 * Math.sin(time * 2.2);
-          ctx.strokeStyle = rgba(235, 214, 158, 205 * gA);
-          ctx.lineWidth = 1.35;
-          ctx.beginPath();
-          ctx.moveTo(4, 20);
-          ctx.lineTo(4, -10 * bloom);
-          ctx.moveTo(4, 6);
-          ctx.quadraticCurveTo(-8 * bloom, -4, -12 * bloom, -14 * bloom);
-          ctx.moveTo(4, 6);
-          ctx.quadraticCurveTo(16 * bloom, -4, 20 * bloom, -14 * bloom);
-          ctx.stroke();
-
-          ctx.fillStyle = rgba(colAccent[0], colAccent[1], colAccent[2], 220 * gA);
-          ctx.beginPath();
-          ctx.arc(4, 20, 4.5, 0, TWO_PI);
-          ctx.fill();
-        }
-
+        ctx.rotate(PI);
+        ctx.drawImage(
+          guideSlices[i],
+          -cardW * 0.5, -cardH * 0.5, cardW, cardH
+        );
         ctx.restore();
       }
 
@@ -1716,6 +1685,7 @@ class GorunmezBaglar {
       }
 
       mountSimulatorUI();
+      connectWebSocketBridge();
       lastTimeSec = p.millis() * 0.001;
 
       this._keyHandler = (e) => {
