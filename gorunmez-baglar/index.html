@@ -2,11 +2,35 @@
 <html lang="tr">
   <head>
     <meta charset="utf-8">
-    <meta http-equiv="refresh" content="0; url=../play/?sketch=GorunmezBaglar">
-    <title>Görünmez Bağlar</title>
-    <script>
-      window.location.replace('../play/?sketch=GorunmezBaglar');
-    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="../favicon.png" />
+    <title>Görünmez Bağlar — Algorizma</title>
+    <script src="https://cdn.jsdelivr.net/npm/p5@2.2.1/lib/p5.js"></script>
+    <style>
+      html, body {
+        height: 100%;
+        overflow: hidden;
+        margin: 0;
+        background: #1a1a1a;
+      }
+    </style>
   </head>
-  <body style="margin:0;background:#1a1a1a;"></body>
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-WMGK9G083X"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-WMGK9G083X');
+  </script>
+
+  <body>
+    <main></main>
+    <script src="../play/sketch/GorunmezBaglar.js"></script>
+    <script>
+      new GorunmezBaglar();
+    </script>
+  </body>
 </html>

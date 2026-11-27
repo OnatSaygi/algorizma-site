@@ -423,7 +423,7 @@ class GorunmezBaglar {
           // "Rizom Koloni Çekirdeği" ve bunları birbirine bağlayan ana miselyum köprüleri!
           const colonyCount = 4 + Math.floor(rng(0, 3));
           for (let c = 0; c < colonyCount; c++) {
-            const rad = c === 0 ? 0 : rng(55, this.maxRadius * 0.48);
+            const rad = c === 0 ? 0 : rng(this.maxRadius * 0.22, this.maxRadius * 0.54);
             const ang = (TWO_PI / (colonyCount - 1 || 1)) * c + rng(-0.35, 0.35);
             const cx = Math.cos(ang) * rad;
             const cy = Math.sin(ang) * rad;
@@ -491,7 +491,7 @@ class GorunmezBaglar {
           this.seedCenters.push({ x: 0, y: 0, plantId: 'palm', r: 10 });
           const axisAngle = rng(0, TWO_PI);
           const fanCount = 7;
-          const fanArc = PI * 1.15; // Yelpaze açıklığı
+          const fanArc = PI * 1.42; // Yelpaze açıklığı
           for (let f = 0; f < fanCount; f++) {
             const norm = map(f, 0, fanCount - 1, -1, 1);
             const a = axisAngle + norm * (fanArc * 0.5);
@@ -531,6 +531,9 @@ class GorunmezBaglar {
         }
 
         // ── 2. ADIM ADIM AJAN BÜYÜMESİ VE EVRELER ARASI MELEZLENME ───────────
+        for (const t of activeTips) {
+          t.startTime += rng(0, 0.24);
+        }
         let queue = [...activeTips];
         let safetyCounter = 0;
 
@@ -544,10 +547,11 @@ class GorunmezBaglar {
           const currentPlant = PLANT_TYPES[seq[seqIdx]] || PLANT_TYPES.moss;
           const prevPlant = PLANT_TYPES[seq[prevSeqIdx]] || currentPlant;
 
-          // Bu dalın kaç adım yürüyeceği ve adım uzunluğu (3317U/GT630M için optimize)
+          // Bu dalın kaç adım yürüyeceği ve adım uzunluğu (1 bitkide de 5 bitkide de çemberi dolduracak şekilde normalize)
           const stepCount = currentPlant.id === 'monkey_tail' ? 13 : currentPlant.id === 'palm' ? 11 : 9;
-          const baseStepLen = (this.maxRadius / (tip.maxDepth * 11 + 8)) * tip.energy *
-            (currentPlant.id === 'monkey_tail' ? 1.35 : currentPlant.id === 'moss' ? 0.82 : 1.05);
+          const effectiveDepthSum = (1 - Math.pow(0.80, tip.maxDepth + 1)) / 0.20;
+          const plantScale = currentPlant.id === 'monkey_tail' ? 1.18 : currentPlant.id === 'moss' ? 0.95 : 1.06;
+          const baseStepLen = (this.maxRadius * 1.08 / (effectiveDepthSum * stepCount)) * tip.energy * plantScale;
 
           const points = [];
           let cx = tip.x;
@@ -584,19 +588,48 @@ class GorunmezBaglar {
               deltaAngle += curlVal * 0.22;
             }
 
+            // E) UZAMSAL İTME (Spatial Avoidance): Dalların üst üste yığılmasını önler
+            let repX = 0;
+            let repY = 0;
+            const avoidRadius = 24;
+            const avoidRadiusSq = avoidRadius * avoidRadius;
+            for (let n = 0; n < this.allNodes.length; n++) {
+              const nd = this.allNodes[n];
+              if (nd.branchId === tip.branchId) continue;
+              const dxN = cx - nd.x;
+              const dyN = cy - nd.y;
+              const dSq = dxN * dxN + dyN * dyN;
+              if (dSq > 1 && dSq < avoidRadiusSq) {
+                const invD = (1 - Math.sqrt(dSq) / avoidRadius) / Math.sqrt(dSq);
+                repX += dxN * invD;
+                repY += dyN * invD;
+              }
+            }
+            if (repX !== 0 || repY !== 0) {
+              const avoidAngle = Math.atan2(repY, repX);
+              let diff = avoidAngle - cAngle;
+              while (diff > PI) diff -= TWO_PI;
+              while (diff < -PI) diff += TWO_PI;
+              deltaAngle += constrain(diff, -0.35, 0.35) * 0.32;
+            }
+
             cAngle += deltaAngle;
             cx += Math.cos(cAngle) * baseStepLen;
             cy += Math.sin(cAngle) * baseStepLen;
 
-            // Çeşme sınırına yaklaşınca teğetsel/dairesel kıvrılma (duvara çarpıp kesilmek yerine suyun kenarında dolanır!)
+            // Çeşme sınırına yaklaşınca yumuşakça kıvrıl, dış halkada yığılmayı önlemek için sınırda sonlan
             const distFromCenter = Math.hypot(cx, cy);
-            if (distFromCenter > this.maxRadius * 0.86) {
+            if (distFromCenter > this.maxRadius * 0.94) {
+              const clampR = this.maxRadius * 0.94;
               const radialAngle = Math.atan2(cy, cx);
-              const tangentAngle = radialAngle + tip.chirality * HALF_PI;
-              cAngle = lerp(cAngle, tangentAngle, 0.35);
-              const clampR = Math.min(distFromCenter, this.maxRadius * 0.96);
               cx = Math.cos(radialAngle) * clampR;
               cy = Math.sin(radialAngle) * clampR;
+              points.push({ x: cx, y: cy, angle: cAngle, tNorm });
+              break;
+            } else if (distFromCenter > this.maxRadius * 0.84) {
+              const radialAngle = Math.atan2(cy, cx);
+              const tangentAngle = radialAngle + tip.chirality * HALF_PI;
+              cAngle = lerp(cAngle, tangentAngle, 0.28);
             }
 
             points.push({ x: cx, y: cy, angle: cAngle, tNorm });
@@ -613,10 +646,11 @@ class GorunmezBaglar {
             }
           }
 
-          // Jüt İplik Demetleri (önceki bitki ile şimdiki bitkinin renklerini melezler!)
-          const strandCount = currentPlant.id === 'monkey_tail' ? 6
+          // Jüt İplik Demetleri (önceki bitki ile şimdiki bitkinin renklerini melezler, derinlik arttıkça sadeleşir)
+          const baseStrands = currentPlant.id === 'monkey_tail' ? 6
             : currentPlant.id === 'palm' ? 5
             : currentPlant.id === 'moss' ? 5 : 4;
+          const strandCount = Math.max(2, baseStrands - Math.floor(tip.depth * 0.75));
           const strands = [];
           for (let s = 0; s < strandCount; s++) {
             strands.push({
@@ -634,7 +668,8 @@ class GorunmezBaglar {
           this.maxGrowthTime = Math.max(this.maxGrowthTime, endTime);
           this.maxDepthSeen = Math.max(this.maxDepthSeen, tip.depth);
 
-          this.branches.push({
+          const currentBranchIdx = this.branches.length;
+          const currentBranch = {
             points,
             plant: currentPlant,
             prevPlant,
@@ -644,25 +679,42 @@ class GorunmezBaglar {
             endTime,
             chirality: tip.chirality,
             strands,
-            phaseSeed: rng(0, 100)
-          });
+            phaseSeed: rng(0, 100),
+            dissolveJitter: rng(-0.15, 0.48),
+            parentBranchIdx: tip.parentBranchIdx !== undefined ? tip.parentBranchIdx : -1,
+            parentPtIdx: tip.parentPtIdx !== undefined ? tip.parentPtIdx : -1,
+            _anchors: null
+          };
+          this.branches.push(currentBranch);
+
+          const pushChild = (ptIdx, childTip) => {
+            if (!currentBranch._anchors) currentBranch._anchors = {};
+            if (!currentBranch._anchors[ptIdx]) {
+              currentBranch._anchors[ptIdx] = { x: points[ptIdx].x, y: points[ptIdx].y };
+            }
+            childTip.parentBranchIdx = currentBranchIdx;
+            childTip.parentPtIdx = ptIdx;
+            childTip.startTime = Math.max(endTime + 0.08, childTip.startTime + rng(-0.12, 0.36));
+            queue.push(childTip);
+          };
 
           // ── 3. EMERGENT ÇATALLANMA (Sonraki Evreye Geçiş Kuralları) ────────
           if (tip.depth < tip.maxDepth) {
             const nextSeqIdx = Math.min(seq.length - 1, Math.floor(((tip.depth + 1) / (tip.maxDepth + 1)) * seq.length));
             const nextPlant = PLANT_TYPES[seq[nextSeqIdx]] || currentPlant;
             const pairKey = `${currentPlant.id}->${nextPlant.id}`;
-            const endPt = points[points.length - 1];
+            const endPtIdx = points.length - 1;
+            const endPt = points[endPtIdx];
 
-            // Dal sayısı çok büyürse son aşamaların kesilmemesi için tekil devam dalına düş
+            // Dal sayısı çok büyürse son aşamaların kesilmemesi ve yığılmaması için tekil devam dalına düş
             const totalPending = this.branches.length + queue.length;
-            if (totalPending > 240) {
-              if (tip.branchId % 2 === 0) {
-                queue.push({
+            if (totalPending > 115) {
+              if (tip.branchId % 2 === 0 && totalPending < 145) {
+                pushChild(endPtIdx, {
                   x: endPt.x,
                   y: endPt.y,
                   angle: endPt.angle + rng(-0.22, 0.22),
-                  energy: tip.energy * 0.78,
+                  energy: tip.energy * 0.74,
                   depth: tip.depth + 1,
                   maxDepth: tip.maxDepth,
                   startTime: nextStageStart,
@@ -677,7 +729,7 @@ class GorunmezBaglar {
                 const idx = Math.floor((w / 5) * (points.length - 1));
                 const spinePt = points[idx];
                 const wingAngle = spinePt.angle + tip.chirality * (0.55 + w * 0.12);
-                queue.push({
+                pushChild(idx, {
                   x: spinePt.x,
                   y: spinePt.y,
                   angle: wingAngle,
@@ -692,7 +744,7 @@ class GorunmezBaglar {
             } else if (pairKey === 'palm->monkey_tail') {
               // YELPAZE UÇLARINDAN SARKAN KIVRIMLI MEDÜZ DOKUNAÇLARI!
               for (const side of [-1, 1]) {
-                queue.push({
+                pushChild(endPtIdx, {
                   x: endPt.x,
                   y: endPt.y,
                   angle: endPt.angle + side * 0.22,
@@ -705,12 +757,12 @@ class GorunmezBaglar {
                 });
               }
             } else if (nextPlant.id === 'palm') {
-              // Palmiye çatallanması: 3'lü veya 4'lü yelpaze taç
-              const splitCount = tip.depth >= 2 ? 3 : 4;
+              // Palmiye çatallanması: ilk katmanlarda 3-4'lü taç, dış katmanlarda sadeleşen 2'li yelpaze
+              const splitCount = tip.depth >= 2 ? 2 : tip.depth === 1 ? 3 : 4;
               const spreadArc = 0.68 + g.fanAsymmetry * 0.18;
               for (let b = 0; b < splitCount; b++) {
                 const offsetA = map(b, 0, splitCount - 1, -spreadArc, spreadArc);
-                queue.push({
+                pushChild(endPtIdx, {
                   x: endPt.x,
                   y: endPt.y,
                   angle: endPt.angle + offsetA,
@@ -726,7 +778,7 @@ class GorunmezBaglar {
               // Küstüm otu çatallanması: Hassas simetrik ikili çatal (dikotomi)
               const splitAngle = 0.46 + (g.peristalticWave * 0.08);
               for (const side of [-1, 1]) {
-                queue.push({
+                pushChild(endPtIdx, {
                   x: endPt.x,
                   y: endPt.y,
                   angle: endPt.angle + side * splitAngle,
@@ -740,7 +792,7 @@ class GorunmezBaglar {
               }
             } else if (nextPlant.id === 'monkey_tail') {
               // Maymun kuyruğu: Ana sarmal devam ederken yandan bir kıvrımlı sürgün verir
-              queue.push({
+              pushChild(endPtIdx, {
                 x: endPt.x,
                 y: endPt.y,
                 angle: endPt.angle + tip.chirality * 0.15,
@@ -751,8 +803,9 @@ class GorunmezBaglar {
                 branchId: tip.branchId * 3 + 1,
                 chirality: tip.chirality
               });
-              const midPt = points[Math.floor(points.length * 0.55)];
-              queue.push({
+              const midPtIdx = Math.floor(points.length * 0.55);
+              const midPt = points[midPtIdx];
+              pushChild(midPtIdx, {
                 x: midPt.x,
                 y: midPt.y,
                 angle: midPt.angle - tip.chirality * 0.62,
@@ -768,7 +821,7 @@ class GorunmezBaglar {
               const angles = [-0.75, rng(-0.15, 0.15), 0.75];
               for (let b = 0; b < angles.length; b++) {
                 if (tip.depth >= 3 && b === 1) continue;
-                queue.push({
+                pushChild(endPtIdx, {
                   x: endPt.x,
                   y: endPt.y,
                   angle: endPt.angle + angles[b] + rng(-0.15, 0.15),
@@ -804,15 +857,16 @@ class GorunmezBaglar {
                   depth: Math.max(nA.depth, nB.depth),
                   color: nA.plant.colorSecondary,
                   thick: rng(0.55, 1.25),
-                  hasSpore: g.synapticSpore > 0.3 && rng() < 0.45
+                  hasSpore: g.synapticSpore > 0.3 && rng() < 0.45,
+                  dissolveJitter: rng(-0.12, 0.42)
                 });
               }
             }
           }
         }
 
-        // Ritmik yokoluş toplam süresi (en uçtan merkeze, her kademe arası suspension ile)
-        this.maxDissolveTime = (this.maxDepthSeen + 2) * 0.58;
+        // Ritmik yokoluş toplam süresi (en uçtan merkeze, her kademe arası suspension + dal bazlı rastgelelik ile)
+        this.maxDissolveTime = (this.maxDepthSeen + 2) * 0.72 + 0.55;
       }
 
       dissolve() {
@@ -828,13 +882,13 @@ class GorunmezBaglar {
         return this.dissolving && this.dissolveTime >= this.maxDissolveTime;
       }
 
-      getDepthFadeAlpha(depth) {
+      getDepthFadeAlpha(depth, jitter = 0) {
         if (!this.dissolving) return 1.0;
-        const FADE_DUR = 0.34;
+        const FADE_DUR = 0.48;
         const FADE_SUSPEND = 0.24;
         const FADE_PERIOD = FADE_DUR + FADE_SUSPEND;
         const layerIdx = Math.max(0, this.maxDepthSeen - depth);
-        const start = layerIdx * FADE_PERIOD;
+        const start = Math.max(0, layerIdx * FADE_PERIOD + jitter);
         const t = constrain((this.dissolveTime - start) / FADE_DUR, 0, 1);
         return 1 - t * t * (3 - 2 * t);
       }
@@ -866,7 +920,7 @@ class GorunmezBaglar {
           const localProg = this.isGhost ? 1.0 : constrain((this.growthTime - br.startTime) / span, 0, 1);
           if (localProg <= 0.001) continue;
 
-          const branchAlpha = this.isGhost ? this.dissolveAlpha : this.getDepthFadeAlpha(br.depth);
+          const branchAlpha = this.isGhost ? this.dissolveAlpha : this.getDepthFadeAlpha(br.depth, br.dissolveJitter || 0);
           if (branchAlpha <= 0.004) continue;
 
           const eased = 1 - Math.pow(1 - localProg, 3);
@@ -887,7 +941,7 @@ class GorunmezBaglar {
           const prog = this.isGhost ? 1.0 : constrain((this.growthTime - b.appearTime) / 0.18, 0, 1);
           if (prog <= 0) continue;
 
-          const bridgeAlpha = this.isGhost ? this.dissolveAlpha : this.getDepthFadeAlpha(b.depth || 0);
+          const bridgeAlpha = this.isGhost ? this.dissolveAlpha : this.getDepthFadeAlpha(b.depth || 0, b.dissolveJitter || 0);
           if (bridgeAlpha <= 0.004) continue;
 
           const c = b.color;
@@ -918,6 +972,8 @@ class GorunmezBaglar {
 
       drawBranch(ctx, br, growth, time, masterAlpha) {
         const g = this.genome;
+        const depthFade = br.maxDepth >= 3 ? Math.max(0.42, 1 - br.depth * 0.13) : 1.0;
+        const effectiveAlpha = masterAlpha * depthFade;
         const colPri = br.plant.colorPrimary;
         const colSec = br.plant.colorSecondary;
         const colGlow = br.plant.colorGlow;
@@ -927,6 +983,9 @@ class GorunmezBaglar {
         const activeCount = Math.max(2, Math.floor(pts.length * growth));
 
         // Dinamik Peristaltik / Su Akıntısı Deformasyonu (GC-free buffer)
+        // Artçıl katmanlar arttıkça öncül (iç) katmanların salınım hızı belirgin şekilde yavaşlar
+        const outerLayers = Math.max(0, this.maxDepthSeen - br.depth);
+        const swaySpeed = 2.2 * Math.pow(0.45, outerLayers);
         const waveAmp = (2.5 + g.peristalticWave * 5.5) * (1 + br.depth * 0.25);
         const waveFreq = 2.2 + g.spiralBias * 1.5;
 
@@ -942,23 +1001,44 @@ class GorunmezBaglar {
             tNorm: new Float32Array(cap)
           };
         }
+        let dxOffset = 0;
+        let dyOffset = 0;
+        if (br.parentBranchIdx >= 0) {
+          const parentBr = this.branches[br.parentBranchIdx];
+          if (parentBr && parentBr._anchors && parentBr._anchors[br.parentPtIdx]) {
+            const anchor = parentBr._anchors[br.parentPtIdx];
+            dxOffset = anchor.x - pts[0].x;
+            dyOffset = anchor.y - pts[0].y;
+          }
+        }
+
         const buf = this._defBuf;
         for (let i = 0; i < activeCount; i++) {
           const pt = pts[i];
           const perp = pt.angle + HALF_PI;
           const cp = Math.cos(perp);
           const sp = Math.sin(perp);
-          const wave = Math.sin(time * 2.2 - pt.tNorm * waveFreq + br.phaseSeed) * waveAmp * pt.tNorm;
-          buf.x[i] = pt.x + cp * wave;
-          buf.y[i] = pt.y + sp * wave;
+          const wave = Math.sin(time * swaySpeed - pt.tNorm * waveFreq + br.phaseSeed) * waveAmp * pt.tNorm;
+          buf.x[i] = pt.x + dxOffset + cp * wave;
+          buf.y[i] = pt.y + dyOffset + sp * wave;
           buf.cosP[i] = cp;
           buf.sinP[i] = sp;
           buf.angle[i] = pt.angle;
           buf.tNorm[i] = pt.tNorm;
         }
 
+        if (br._anchors) {
+          for (const key in br._anchors) {
+            const pIdx = Number(key);
+            if (pIdx < activeCount) {
+              br._anchors[key].x = buf.x[pIdx];
+              br._anchors[key].y = buf.y[pIdx];
+            }
+          }
+        }
+
         // A) İç Çelik Tel Omurga
-        ctx.strokeStyle = rgba(colGlow[0], colGlow[1], colGlow[2], 125 * masterAlpha);
+        ctx.strokeStyle = rgba(colGlow[0], colGlow[1], colGlow[2], 125 * effectiveAlpha);
         ctx.lineWidth = Math.max(0.65, (br.maxDepth - br.depth + 1) * 0.45);
         ctx.beginPath();
         for (let i = 0; i < activeCount; i++) {
@@ -981,7 +1061,7 @@ class GorunmezBaglar {
             lerp(cSource[0], colSec[0], mix),
             lerp(cSource[1], colSec[1], mix),
             lerp(cSource[2], colSec[2], mix),
-            165 * st.alpha * masterAlpha
+            165 * st.alpha * effectiveAlpha
           );
           ctx.lineWidth = st.weight * map(br.depth, 0, br.maxDepth, 1.25, 0.6);
 
@@ -1002,7 +1082,7 @@ class GorunmezBaglar {
 
         // C) Melezlenmiş Botanik Organlar (Okutulma Sırasındaki Geçişlere Göre Şekillenir)
         if (!this.isGhost && growth > 0.2) {
-          const organAlpha = map(growth, 0.2, 1, 0, 1) * masterAlpha;
+          const organAlpha = map(growth, 0.2, 1, 0, 1) * effectiveAlpha;
           this.drawHybridOrgans(ctx, br, buf, activeCount, time, organAlpha);
         }
       }
@@ -1016,10 +1096,8 @@ class GorunmezBaglar {
         const colGlow = br.plant.colorGlow;
 
         if (id === 'mimosa') {
-          const foldWave = Math.sin(time * (2.4 + g.peristalticWave * 0.8) - br.depth * 1.2 + br.phaseSeed);
-          const foldRatio = constrain(map(foldWave, 0.05, 0.92, 0, 1), 0, 1);
+          const foldSpeed = 2.4 + g.peristalticWave * 0.8;
           const lenMult = prevId === 'palm' ? 1.55 : prevId === 'monkey_tail' ? 1.25 : 1.0;
-          const openAngle = lerp(PI * 0.44, PI * 0.06, foldRatio);
           const isCurved = prevId === 'monkey_tail';
 
           // Yaprakçık sapları (tek batched path)
@@ -1027,10 +1105,22 @@ class GorunmezBaglar {
           ctx.lineWidth = 1.05;
           ctx.beginPath();
           const tipPts = [];
+          let foldSum = 0;
+          let foldCount = 0;
           for (let i = 2; i < activeCount - 1; i += 2) {
             const dx = buf.x[i];
             const dy = buf.y[i];
             const da = buf.angle[i];
+            // İçten dışa doğru katman (depth) ve dal (tNorm) bazlı zaman gecikmesi
+            const phaseOffset = br.depth * 2.6 + buf.tNorm[i] * 1.8;
+            const foldWave = Math.sin(time * foldSpeed - phaseOffset);
+            const rawFold = constrain(map(foldWave, -0.15, 0.88, 0, 1), 0, 1);
+            // Sinüs tabanlı S-curve (lineer yerine yumuşak açılıp kapanma)
+            const foldRatio = 0.5 - 0.5 * Math.cos(rawFold * PI);
+            foldSum += foldRatio;
+            foldCount++;
+
+            const openAngle = lerp(PI * 0.44, PI * 0.06, foldRatio);
             const leafletLen = map(i, 0, activeCount, 19, 8) * lenMult * (1 - br.depth * 0.1);
 
             for (const side of [-1, 1]) {
@@ -1052,7 +1142,8 @@ class GorunmezBaglar {
 
           // Yaprakçık uçları (tek batched path)
           if (tipPts.length > 0) {
-            ctx.fillStyle = rgba(colGlow[0], colGlow[1], colGlow[2], (140 + 95 * foldRatio) * alpha);
+            const avgFold = foldCount > 0 ? foldSum / foldCount : 0;
+            ctx.fillStyle = rgba(colGlow[0], colGlow[1], colGlow[2], (140 + 95 * avgFold) * alpha);
             ctx.beginPath();
             for (let k = 0; k < tipPts.length; k += 2) {
               const lx = tipPts[k];
@@ -1070,7 +1161,8 @@ class GorunmezBaglar {
           ctx.lineWidth = 0.95;
           ctx.beginPath();
 
-          for (let i = 2; i < activeCount; i += 3) {
+          const palmStride = br.depth >= 2 ? 4 : 3;
+          for (let i = 2; i < activeCount; i += palmStride) {
             const dx = buf.x[i];
             const dy = buf.y[i];
             const da = buf.angle[i];
@@ -1098,12 +1190,14 @@ class GorunmezBaglar {
           const lenBoost = 1 + g.weepingTendrils * 0.65;
           ctx.beginPath();
 
-          for (let i = 1; i < activeCount; i++) {
+          const tailStride = br.depth >= 2 ? 2 : 1;
+          const hairCount = br.depth >= 2 ? 2 : 4;
+          for (let i = 1; i < activeCount; i += tailStride) {
             const dx = buf.x[i];
             const dy = buf.y[i];
             const da = buf.angle[i];
             const tn = buf.tNorm[i];
-            for (let h = 0; h < 4; h++) {
+            for (let h = 0; h < hairCount; h++) {
               const side = h % 2 === 0 ? 1 : -1;
               const hairPhase = i * 0.7 + h * 1.9 + br.phaseSeed;
               const hairLen = (15 + Math.sin(hairPhase) * 8) * lenBoost * (1 - tn * 0.25);
@@ -1125,13 +1219,15 @@ class GorunmezBaglar {
           ctx.beginPath();
           const sporePts = [];
 
-          for (let i = 2; i < activeCount; i += 2) {
+          const mossStride = br.depth >= 2 ? 3 : 2;
+          const sporeCount = br.depth >= 2 ? 3 : 5;
+          for (let i = 2; i < activeCount; i += mossStride) {
             const dx = buf.x[i];
             const dy = buf.y[i];
             const clusterRadius = (10 + 5 * Math.sin(i * 1.3 + br.phaseSeed)) * (1 + g.anastomosisRate * 0.2);
 
-            for (let m = 0; m < 5; m++) {
-              const a = (TWO_PI / 5) * m + i + time * 0.45;
+            for (let m = 0; m < sporeCount; m++) {
+              const a = (TWO_PI / sporeCount) * m + i + time * 0.45;
               const r = clusterRadius * (0.6 + 0.4 * Math.sin(time * 2.1 + m));
               const mx = dx + Math.cos(a) * r;
               const my = dy + Math.sin(a) * r;
@@ -1219,7 +1315,7 @@ class GorunmezBaglar {
 
       if (seed.history.length > 0) {
         ghostOrganism = null;
-        organism = new EmergentOrganism(seed.history, BASE_RADIUS * 0.92);
+        organism = new EmergentOrganism(seed.history, BASE_RADIUS * 0.96);
       } else if (organism) {
         organism.dissolve();
       }
